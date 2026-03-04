@@ -3,9 +3,13 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+import re
+import numpy as np
+
 import pandas as pd
 import streamlit as st
 import altair as alt
+import plotly.graph_objects as go
 
 from utils.export import to_excel_bytes
 from utils.guide import load_guide
@@ -185,15 +189,18 @@ tab_mon, tab_edit = st.tabs(["📊 Monitoraggio", "🛠️ Modifica & Download"]
 
 # ---------------- Monitoraggio ----------------
 with tab_mon:
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.subheader("Vista di struttura — score per Dimensione (0–100)")
-    st.caption("Score = media dei livelli (1–5) × 20, ignorando le voci NA (0).")
-
+    # Precalcoli (numerico 0..5) sullo scope selezionato
     df_num = recode_df_to_num(df_work, editable_codes)
 
-    codes_by_dim = {}
+    # Mapping Dimensione -> codici (ordine guida)
+    codes_by_dim: dict[str, list[str]] = {}
     for dim, g in scope_df.groupby("Dimensione", sort=False):
         codes_by_dim[str(dim)] = g["Codice"].astype(str).tolist()
+
+    # ---------------- Vista Struttura ----------------
+    st.markdown("<div class='card'>", unsafe_allow_html=True)
+    st.subheader("Vista Struttura — score medio per Dimensione (0–100)")
+    st.caption("Score = media dei livelli (1–5) × 20, ignorando NA (0).")
 
     rows = []
     for dim, codes in codes_by_dim.items():
@@ -215,51 +222,370 @@ with tab_mon:
 
     dim_table = pd.DataFrame(rows).sort_values("Score_medio_%", ascending=False)
 
-    c1, c2 = st.columns([1.15, 1])
-    with c1:
-        st.dataframe(dim_table, use_container_width=True, hide_index=True)
-    with c2:
-        if not dim_table.empty:
-            chart = (
-                alt.Chart(dim_table)
-                .mark_bar(**BAR_BORDER)
-                .encode(
-                    x=alt.X("Score_medio_%:Q", title="Score medio 0–100", scale=alt.Scale(domain=[0, 100])),
-                    y=alt.Y("Dimensione:N", sort=dim_table["Dimensione"].tolist(), title=None),
-                    color=alt.Color("Score_medio_%:Q", scale=COLOR_SCALE, legend=None),
-                    tooltip=[
-                        alt.Tooltip("Dimensione:N"),
-                        alt.Tooltip("Score_medio_%:Q", format=".1f"),
-                        alt.Tooltip("Copertura_media_%:Q", format=".1f"),
-                        alt.Tooltip("N_competenze:Q"),
-                    ],
-                )
-                .properties(height=min(520, 28 * max(6, len(dim_table))))
+    if dim_table.empty:
+        st.info("Nessuna dimensione disponibile nel scope selezionato.")
+    else:
+        chart = (
+            alt.Chart(dim_table)
+            .mark_bar(**BAR_BORDER)
+            .encode(
+                y=alt.Y("Dimensione:N", sort=dim_table["Dimensione"].tolist(), title=None),
+                x=alt.X(
+                    "Score_medio_%:Q",
+                    title="Score medio 0–100",
+                    scale=alt.Scale(domain=[0, 100]),
+                ),
+                color=alt.Color("Score_medio_%:Q", scale=COLOR_SCALE, legend=None),
+                tooltip=[
+                    alt.Tooltip("Dimensione:N"),
+                    alt.Tooltip("Score_medio_%:Q", format=".1f"),
+                    alt.Tooltip("Copertura_media_%:Q", format=".1f"),
+                    alt.Tooltip("N_competenze:Q"),
+                ],
             )
-            st.altair_chart(chart, use_container_width=True)
-        else:
-            st.info("Nessuna dimensione disponibile nel scope selezionato.")
+            .properties(height=min(720, 28 * max(8, len(dim_table))))
+        )
+        st.altair_chart(chart, use_container_width=True)
+
     st.markdown("</div>", unsafe_allow_html=True)
 
+    # ---------------- Vista per infermiere (Scout Report) ----------------
     st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.subheader("Vista per infermiere")
-    st.caption("Totale = media dei punteggi di dimensione (0–100) nello scope selezionato.")
-    overall_rows = []
-    for i, r in df_num.iterrows():
-        scores = [score_percent(r[codes]) for codes in codes_by_dim.values()]
-        overall = float(pd.Series(scores).mean()) if len(scores) else 0.0
-        overall_rows.append(
+    st.subheader("Vista per infermiere — Scout Report (senza clustering)")
+    st.caption("Profilo individuale: radar, barre 0–100, percentili globali e livelli competenze (NA/N/Pav/C/A/E).")
+
+    # Selezione infermiere
+    df_id = df_work[["ID", "Nome", "Cognome", "Struttura"]].copy()
+    df_id = df_id.astype(str)
+    df_id["label"] = (
+        df_id["Cognome"].astype(str)
+        + " "
+        + df_id["Nome"].astype(str)
+        + " ("
+        + df_id["Struttura"].astype(str)
+        + ", ID:"
+        + df_id["ID"].astype(str)
+        + ")"
+    )
+
+    if df_id.empty:
+        st.warning("Nessun infermiere presente nel file.")
+        st.stop()
+
+    target_label = st.selectbox("Seleziona infermiere", sorted(df_id["label"].tolist()), key="scout_target")
+    target_id = df_id.loc[df_id["label"] == target_label, "ID"].iloc[0]
+    target_id_str = str(target_id)
+
+    # -------------------- Toggle competenze in visualizzazione --------------------
+    scope_mode = st.radio(
+        "Competenze in visualizzazione",
+        ["Solo Trasversali", "Trasversali + Specifiche struttura"],
+        horizontal=True,
+        help="Influenza barre/percentili e dettaglio competenze. Il Radar resta sempre sulle 8 Trasversali.",
+        key="scout_scope_mode",
+    )
+
+    if scope_mode == "Solo Trasversali":
+        scout_scope_df = guide.df[guide.df["Codice"].astype(str).isin(TRANS_CODES)].copy()
+    else:
+        scout_scope_df = scope_df.copy()
+
+    scout_scope_df["Codice"] = scout_scope_df["Codice"].astype(str)
+
+    # Mapping Dimensione -> codici (ordine guida)
+    codes_by_dim = {}
+    for dim, g in scout_scope_df.groupby("Dimensione", sort=False):
+        codes_by_dim[str(dim)] = g["Codice"].astype(str).tolist()
+
+    dims_all = list(codes_by_dim.keys())
+
+    # Costruisco df dimensioni (0–100) per tutti, sullo scope selezionato
+    df_dims = df_work[["ID", "Nome", "Cognome", "Struttura"]].copy().astype(str)
+    for dim, codes in codes_by_dim.items():
+        df_dims[dim] = df_num[codes].apply(score_percent, axis=1)
+
+    row_dims = df_dims[df_dims["ID"].astype(str) == target_id_str].iloc[0]
+
+
+    # ------------------------------------------------------------
+    # 1) Profilo anagrafico & sintesi dimensioni (0–100)
+    # ------------------------------------------------------------
+    st.markdown("## Profilo Anagrafico & Profilo")
+
+    c1, c2, c3 = st.columns([2, 2, 2])
+
+    with c1:
+        st.markdown("**Anagrafica**")
+        st.write(f"- **ID**: {row_dims['ID']}")
+        st.write(f"- **Nome**: {row_dims['Nome']}")
+        st.write(f"- **Cognome**: {row_dims['Cognome']}")
+        st.write(f"- **Struttura**: {row_dims['Struttura']}")
+
+    with c2:
+        st.markdown("**Sintesi dimensioni (0–100)**")
+        dims_all = list(codes_by_dim.keys())
+        vals = [float(row_dims[d]) for d in dims_all] if dims_all else []
+        mean_v = float(np.mean(vals)) if vals else np.nan
+        min_v = float(np.min(vals)) if vals else np.nan
+        max_v = float(np.max(vals)) if vals else np.nan
+        st.metric("Media", f"{mean_v:.1f}" if np.isfinite(mean_v) else "—")
+        st.metric("Min", f"{min_v:.1f}" if np.isfinite(min_v) else "—")
+        st.metric("Max", f"{max_v:.1f}" if np.isfinite(max_v) else "—")
+
+    # ------------------------------------------------------------
+    # 2) Radar (solo Trasversali: 8 dimensioni DPS)
+    # ------------------------------------------------------------
+    st.markdown("## Radar dimensioni della Competenza (Trasversali)")
+
+    DIMENSIONS_ORDER = ['Collaborazione e comunicazione', 'Etica, Equità e Advocacy', 'Evidence Based Practice (EBP)', 'Leadership e cultura assistenziale', 'Educazione', "Presa in carico e pianificazione dell'assistenza", 'Sicurezza e qualità delle cure', 'Sviluppo professionale']
+    DIMS_RADAR = [d for d in DIMENSIONS_ORDER if d in df_dims.columns]
+
+    if len(DIMS_RADAR) < 3:
+        st.info("Radar non disponibile: servono almeno 3 dimensioni Trasversali nel dataset.")
+    else:
+        r_vals = [float(row_dims[d]) for d in DIMS_RADAR]
+        radar_fig = go.Figure()
+        radar_fig.add_trace(
+            go.Scatterpolar(
+                r=r_vals + [r_vals[0]],
+                theta=DIMS_RADAR + [DIMS_RADAR[0]],
+                name="Profilo",
+                line=dict(color="black", width=2),
+                fill="toself",
+                fillcolor="rgba(28,130,62,0.25)",
+            )
+        )
+        radar_fig.update_layout(
+            showlegend=False,
+            polar=dict(radialaxis=dict(range=[0, 100])),
+            height=420,
+            margin=dict(l=10, r=10, t=10, b=10),
+        )
+        st.plotly_chart(radar_fig, use_container_width=True)
+
+    st.markdown("---")
+
+    # ------------------------------------------------------------
+    # 3) Barre: profilo dimensioni (0–100) sullo scope selezionato
+    # ------------------------------------------------------------
+    st.markdown("## Profilo di Competenza (barre 0–100)")
+
+    dims_all = list(codes_by_dim.keys())
+    if dims_all:
+        dps_df = pd.DataFrame(
+            {"Dimensione": dims_all, "Score": [float(row_dims[d]) for d in dims_all]}
+        )
+
+        dps_chart = (
+            alt.Chart(dps_df)
+            .mark_bar(**BAR_BORDER)
+            .encode(
+                y=alt.Y("Dimensione:N", sort=dims_all, title=None),
+                x=alt.X("Score:Q", title="Score 0–100", scale=alt.Scale(domain=[0, 100])),
+                color=alt.Color("Score:Q", scale=COLOR_SCALE, legend=None),
+                tooltip=[alt.Tooltip("Dimensione:N"), alt.Tooltip("Score:Q", format=".1f")],
+            )
+            .properties(height=min(720, 28 * max(8, len(dps_df))))
+        )
+        st.altair_chart(dps_chart, use_container_width=True)
+    else:
+        st.info("Nessuna dimensione da visualizzare per lo scope selezionato.")
+
+    st.markdown("---")
+
+    # ------------------------------------------------------------
+    # 4) Percentili globali (rispetto ai colleghi del file caricato)
+    # ------------------------------------------------------------
+    st.markdown("## Posizione rispetto ai percentili globali")
+
+    rows_pct = []
+    for dim in dims_all:
+        global_scores = df_dims[dim].dropna().values
+        val = float(row_dims[dim])
+        if len(global_scores) > 0:
+            pct = (float(np.sum(global_scores <= val)) / float(len(global_scores))) * 100.0
+        else:
+            pct = np.nan
+        rows_pct.append({"Dimensione": dim, "Percentile globale": pct})
+
+    pct_df = pd.DataFrame(rows_pct)
+
+    if not pct_df.empty:
+        pct_chart = (
+            alt.Chart(pct_df)
+            .mark_bar(**BAR_BORDER)
+            .encode(
+                y=alt.Y("Dimensione:N", sort=dims_all, title=None),
+                x=alt.X(
+                    "Percentile globale:Q",
+                    title="Percentile globale (%)",
+                    scale=alt.Scale(domain=[0, 100]),
+                ),
+                color=alt.Color("Percentile globale:Q", scale=COLOR_SCALE, legend=None),
+                tooltip=[alt.Tooltip("Dimensione:N"), alt.Tooltip("Percentile globale:Q", format=".1f")],
+            )
+            .properties(height=min(720, 28 * max(8, len(pct_df))))
+        )
+        st.altair_chart(pct_chart, use_container_width=True)
+    else:
+        st.info("Impossibile calcolare i percentili globali.")
+
+    st.markdown("---")
+
+    # ------------------------------------------------------------
+    # 5) Competenze dettagliate (solo livello NA/N/Pav/C/A/E)
+    # ------------------------------------------------------------
+    st.markdown("## Competenze dettagliate del profilo")
+
+    # Preparazione mapping (etichette/dimensioni) per lo scope selezionato
+    _scope = scout_scope_df.copy()
+    _scope["Codice"] = _scope["Codice"].astype(str)
+
+    code_to_label = dict(zip(_scope["Codice"], _scope["Competenza"].astype(str)))
+    code_to_dim = dict(zip(_scope["Codice"], _scope["Dimensione"].astype(str)))
+    dim_pos = {d: i for i, d in enumerate(dims_all)}
+
+    def _code_sort_key(code: str):
+        d = code_to_dim.get(code, "")
+        dpos = dim_pos.get(d, 999)
+        # root = parte non numerica finale, n = numero finale
+        m = re.search(r"(\D+)(\d+)$", str(code))
+        if m:
+            root = m.group(1)
+            n = int(m.group(2))
+        else:
+            root = re.sub(r"\d+$", "", str(code))
+            n = 9999
+        return (dpos, root, n, str(code))
+
+    sorted_codes = sorted(_scope["Codice"].astype(str).tolist(), key=_code_sort_key)
+
+    # Individua la riga dell'infermiere in df_work (per i livelli stringa)
+    _target_idx = df_work.index[df_work["ID"].astype(str) == target_id_str].tolist()
+    if not _target_idx:
+        st.warning("Infermiere non trovato nel dataset.")
+        st.stop()
+    target_idx = _target_idx[0]
+
+    rows_comp = []
+    for code in sorted_codes:
+        level = normalize_level(df_work.loc[target_idx, code]) if code in df_work.columns else "NA"
+        rows_comp.append(
             {
-                "ID": df_work.loc[i, "ID"],
-                "Cognome": df_work.loc[i, "Cognome"],
-                "Nome": df_work.loc[i, "Nome"],
-                "Score_totale_%": round(overall, 1),
+                "Dimensione": code_to_dim.get(code, ""),
+                "Competenza": code_to_label.get(code, code),
+                "Livello": level,
             }
         )
-    nurse_table = pd.DataFrame(overall_rows).sort_values("Score_totale_%", ascending=False)
-    st.dataframe(nurse_table, use_container_width=True, hide_index=True)
-    st.markdown("</div>", unsafe_allow_html=True)
 
+    comp_df = pd.DataFrame(rows_comp)
+
+    # -------------------- Visione d'insieme --------------------
+    st.markdown("### Visione d'insieme")
+
+    dim_rows = []
+    for dim, codes in codes_by_dim.items():
+        vals = df_num.loc[target_idx, codes]
+        coverage = float((vals != 0).sum() / max(len(codes), 1) * 100)
+        score = float(row_dims[dim]) if dim in row_dims else 0.0
+
+        global_scores = df_dims[dim].dropna().astype(float).values if dim in df_dims.columns else np.array([])
+        if len(global_scores) > 0:
+            pct = (float(np.sum(global_scores <= score)) / float(len(global_scores))) * 100.0
+        else:
+            pct = np.nan
+
+        dim_rows.append(
+            {
+                "Dimensione": dim,
+                "Score": round(score, 1),
+                "Copertura_%": round(coverage, 1),
+                "Percentile_globale": round(float(pct), 1) if np.isfinite(pct) else np.nan,
+                "N_competenze": int(len(codes)),
+            }
+        )
+
+    dim_over = pd.DataFrame(dim_rows)
+
+    if dim_over.empty:
+        st.info("Nessuna competenza disponibile nel profilo per lo scope selezionato.")
+    else:
+        over_chart = (
+            alt.Chart(dim_over)
+            .mark_bar(**BAR_BORDER)
+            .encode(
+                y=alt.Y("Dimensione:N", sort=dims_all, title=None),
+                x=alt.X("Score:Q", title="Score 0–100", scale=alt.Scale(domain=[0, 100])),
+                color=alt.Color("Score:Q", scale=COLOR_SCALE, legend=None),
+                tooltip=[
+                    alt.Tooltip("Dimensione:N"),
+                    alt.Tooltip("Score:Q", format=".1f"),
+                    alt.Tooltip("Copertura_%:Q", format=".1f"),
+                    alt.Tooltip("Percentile_globale:Q", format=".1f"),
+                    alt.Tooltip("N_competenze:Q"),
+                ],
+            )
+            .properties(height=min(720, 28 * max(8, len(dim_over))))
+        )
+        st.altair_chart(over_chart, use_container_width=True)
+
+        show_dim_table = st.toggle(
+            "Mostra tabella riepilogo (dimensioni)",
+            value=False,
+            key="scout_show_dim_table",
+        )
+        if show_dim_table:
+            st.dataframe(
+                dim_over[["Dimensione", "Score", "Copertura_%", "Percentile_globale", "N_competenze"]],
+                hide_index=True,
+                use_container_width=True,
+            )
+
+    # -------------------- Singole competenze: Expander --------------------
+    st.markdown("### Singole competenze (per dimensione)")
+
+    q = st.text_input("Cerca competenza", value="", key="scout_search_comp")
+    view_comp = comp_df.copy()
+    if q.strip():
+        qq = q.strip().lower()
+        view_comp = view_comp[view_comp["Competenza"].astype(str).str.lower().str.contains(qq)].copy()
+
+    if view_comp.empty:
+        st.info("Nessuna competenza trovata con il filtro.")
+    else:
+        # mapping dimensione -> metriche (per titolo expander)
+        _metrics = {}
+        if not dim_over.empty:
+            for _, r in dim_over.iterrows():
+                _metrics[str(r["Dimensione"])] = r
+
+        for dim in dims_all:
+            sub = view_comp[view_comp["Dimensione"] == dim][["Competenza", "Livello"]].copy()
+            if sub.empty:
+                continue
+
+            r = _metrics.get(dim, None)
+            if r is not None and pd.notna(r.get("Score", np.nan)):
+                title = f"{dim} — {float(r['Score']):.1f}/100 · Copertura {float(r['Copertura_%']):.0f}%"
+            else:
+                title = dim
+
+            with st.expander(title, expanded=False):
+                st.dataframe(sub, hide_index=True, use_container_width=True)
+
+        show_list = st.toggle(
+            "Mostra lista completa (tutte le competenze filtrate)",
+            value=False,
+            key="scout_show_full_list",
+        )
+        if show_list:
+            st.dataframe(
+                view_comp[["Dimensione", "Competenza", "Livello"]],
+                hide_index=True,
+                use_container_width=True,
+            )
+
+    st.markdown("</div>", unsafe_allow_html=True)
 # ---------------- Modifica ----------------
 with tab_edit:
     st.markdown("<div class='card'>", unsafe_allow_html=True)
