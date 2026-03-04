@@ -1,0 +1,48 @@
+/* Minimal green accent style (replace with your original 'Applicativo Competenze' CSS if available) */
+:root{
+  --accent:#1b7f5a;
+  --accent-2:#0f5f43;
+  --bg-soft:#f5faf7;
+  --card:#ffffff;
+  --text:#0b1a12;
+  --muted:#5b6b63;
+  --border:rgba(28, 59, 44, 0.12);
+}
+
+.app-title{
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  margin-bottom: 0.2rem;
+}
+.app-subtitle{
+  color: var(--muted);
+  margin-top: 0;
+  margin-bottom: 0.6rem;
+}
+
+.card{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1rem 1.1rem;
+  box-shadow: 0 1px 10px rgba(0,0,0,0.03);
+  margin-bottom: 0.8rem;
+}
+
+.pill{
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  color: var(--accent-2);
+  margin-right: 0.35rem;
+  margin-bottom: 0.25rem;
+}
+
+.hint{
+  color: var(--muted);
+  font-size: 0.95rem;
+}

@@ -1,0 +1,151 @@
+DEFAULT: []
+Ospedale di Comunità:
+- Transitional care e continuità assistenziale
+- Prevenzione e tutela della salute
+- Teleassistenza e sistemi informativi
+IFeC:
+- Transitional care e continuità assistenziale
+- Prevenzione e tutela della salute
+- Teleassistenza e sistemi informativi
+COT:
+- Transitional care e continuità assistenziale
+- Prevenzione e tutela della salute
+- Teleassistenza e sistemi informativi
+Cardiologia:
+- Monitoraggio avanzato e interpretazione fisiopatologica
+- Ventilazione e gestione avanzata delle vie aeree
+- Triage avanzato e prioritarizzazione clinica
+- Emodialisi e tecnologie extracorporee
+Terapia Intensiva:
+- Procurement d’organo
+- Monitoraggio avanzato e interpretazione fisiopatologica
+- Ventilazione e gestione avanzata delle vie aeree
+- Triage avanzato e prioritarizzazione clinica
+- Emodialisi e tecnologie extracorporee
+Gestione Sale Operatorie:
+- Procurement d’organo
+- Monitoraggio avanzato e interpretazione fisiopatologica
+- Ventilazione e gestione avanzata delle vie aeree
+- Triage avanzato e prioritarizzazione clinica
+- Emodialisi e tecnologie extracorporee
+- Preparazione e allestimento della sala
+- Gestione assistito e sicurezza peri-procedurale
+- Tecnologie dispositivi e strumentazione
+- Collaborazione tecnico-procedurale e workflow sterile
+- Reprocessing tracciabilità e controllo del rischio
+Angiografia:
+- Preparazione e allestimento della sala
+- Gestione assistito e sicurezza peri-procedurale
+- Tecnologie dispositivi e strumentazione
+- Collaborazione tecnico-procedurale e workflow sterile
+- Reprocessing tracciabilità e controllo del rischio
+Emodinamica:
+- Preparazione e allestimento della sala
+- Gestione assistito e sicurezza peri-procedurale
+- Tecnologie dispositivi e strumentazione
+- Collaborazione tecnico-procedurale e workflow sterile
+- Reprocessing tracciabilità e controllo del rischio
+Endoscopia:
+- Preparazione e allestimento della sala
+- Gestione assistito e sicurezza peri-procedurale
+- Tecnologie dispositivi e strumentazione
+- Collaborazione tecnico-procedurale e workflow sterile
+- Reprocessing tracciabilità e controllo del rischio
+Nefrologia:
+- Gestione clinica avanzata della malattia renale
+- Emodialisi e tecnologie extracorporee
+- Accessi dialitici e terapie peritoneali
+Emodialisi:
+- Gestione clinica avanzata della malattia renale
+- Emodialisi e tecnologie extracorporee
+- Accessi dialitici e terapie peritoneali
+Oncologia:
+- Terapie oncologiche sistemiche e sicurezza farmacologica
+- Genomica e medicina personalizzata
+- Navigazione oncologica e survivorship avanzata
+- Ricerca clinica e innovazione terapeutica
+- Gestione perioperatoria avanzata
+- Monitoraggio clinico e gestione delle complicanze
+- Gestione avanzata di ferite e dispositivi
+- Prevenzione e sicurezza chirurgica
+Ematologia:
+- Terapie oncologiche sistemiche e sicurezza farmacologica
+- Genomica e medicina personalizzata
+- Navigazione oncologica e survivorship avanzata
+- Ricerca clinica e innovazione terapeutica
+DH Oncologico:
+- Terapie oncologiche sistemiche e sicurezza farmacologica
+- Genomica e medicina personalizzata
+- Navigazione oncologica e survivorship avanzata
+- Ricerca clinica e innovazione terapeutica
+Breast Unit:
+- Terapie oncologiche sistemiche e sicurezza farmacologica
+- Genomica e medicina personalizzata
+- Navigazione oncologica e survivorship avanzata
+- Ricerca clinica e innovazione terapeutica
+Chirurgia Generale:
+- Gestione perioperatoria avanzata
+- Monitoraggio clinico e gestione delle complicanze
+- Gestione avanzata di ferite e dispositivi
+- Prevenzione e sicurezza chirurgica
+Chirurgia Multispecialistica:
+- Gestione perioperatoria avanzata
+- Monitoraggio clinico e gestione delle complicanze
+- Gestione avanzata di ferite e dispositivi
+- Prevenzione e sicurezza chirurgica
+Ortopedia:
+- Gestione perioperatoria avanzata
+- Monitoraggio clinico e gestione delle complicanze
+- Gestione avanzata di ferite e dispositivi
+- Prevenzione e sicurezza chirurgica
+Neurochirurgia:
+- Gestione perioperatoria avanzata
+- Monitoraggio clinico e gestione delle complicanze
+- Gestione avanzata di ferite e dispositivi
+- Prevenzione e sicurezza chirurgica
+- Procurement d’organo
+- Monitoraggio avanzato e interpretazione fisiopatologica
+- Ventilazione e gestione avanzata delle vie aeree
+- Triage avanzato e prioritarizzazione clinica
+Week Surgery:
+- Gestione perioperatoria avanzata
+- Monitoraggio clinico e gestione delle complicanze
+- Gestione avanzata di ferite e dispositivi
+- Prevenzione e sicurezza chirurgica
+Ginecologia:
+- Gestione perioperatoria avanzata
+- Monitoraggio clinico e gestione delle complicanze
+- Gestione avanzata di ferite e dispositivi
+- Prevenzione e sicurezza chirurgica
+Pediatria:
+- Adattamento neonatale e valutazione clinica
+- Nutrizione e supporto all’allattamento
+- Monitoraggio clinico e prevenzione complicanze
+- Screening e procedure neonatali
+- Valutazione clinica pediatrica avanzata
+- Gestione terapeutica pediatrica
+Patologia Neonatale:
+- Adattamento neonatale e valutazione clinica
+- Nutrizione e supporto all’allattamento
+- Monitoraggio clinico e prevenzione complicanze
+- Screening e procedure neonatali
+- Valutazione clinica pediatrica avanzata
+- Gestione terapeutica pediatrica
+Pronto Soccorso:
+- Monitoraggio avanzato e interpretazione fisiopatologica
+- Ventilazione e gestione avanzata delle vie aeree
+- Triage avanzato e prioritarizzazione clinica
+Pneumologia:
+- Gestione perioperatoria avanzata
+- Monitoraggio clinico e gestione delle complicanze
+- Gestione avanzata di ferite e dispositivi
+- Prevenzione e sicurezza chirurgica
+- Monitoraggio avanzato e interpretazione fisiopatologica
+- Ventilazione e gestione avanzata delle vie aeree
+Neurologia:
+- Gestione perioperatoria avanzata
+- Monitoraggio clinico e gestione delle complicanze
+- Gestione avanzata di ferite e dispositivi
+- Prevenzione e sicurezza chirurgica
+- Monitoraggio avanzato e interpretazione fisiopatologica
+- Ventilazione e gestione avanzata delle vie aeree
