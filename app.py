@@ -83,7 +83,7 @@ st.markdown(
 )
 
 with st.sidebar:
-    st.markdown("### 1) Carica dataset di reparto")
+    st.markdown("### 1) Carica file di reparto")
     uploaded = st.file_uploader("File Excel (.xlsx)", type=["xlsx"], accept_multiple_files=False)
 
 if uploaded is None:
@@ -142,7 +142,7 @@ else:
 
 with st.sidebar:
     st.markdown("---")
-    st.markdown("### 2) Mappa Struttura → Dimensioni")
+    st.markdown("### 2) Mappa competenze")
     st.markdown(f"<div class='pill'>Struttura: {structure or '—'}</div>", unsafe_allow_html=True)
 
     selected_dims = st.multiselect(
@@ -157,7 +157,7 @@ with st.sidebar:
         st.info("Struttura non presente nella mappa: scegli manualmente le Dimensioni specifiche da includere.")
 
     st.markdown("---")
-    st.caption("Download sempre uniforme: colonne non visibili impostate a NA.")
+    st.caption("")
 
 # ------------------------------------------------------------
 # Inizializza df_work: schema uniforme + normalizzazione livelli
@@ -199,8 +199,8 @@ with tab_mon:
 
     # ---------------- Vista Struttura ----------------
     st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.subheader("Vista Struttura — score medio per Dimensione (0–100)")
-    st.caption("Score = media dei livelli (1–5) × 20, ignorando NA (0).")
+    st.subheader("Punteggi medi per dimensione di competenza")
+    st.caption("Punteggio medio per ogni dimensione delle competenze trasversali e specifiche.")
 
     rows = []
     for dim, codes in codes_by_dim.items():
@@ -251,8 +251,8 @@ with tab_mon:
 
     # ---------------- Vista per infermiere (Scout Report) ----------------
     st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.subheader("Vista per infermiere — Scout Report (senza clustering)")
-    st.caption("Profilo individuale: radar, barre 0–100, percentili globali e livelli competenze (NA/N/Pav/C/A/E).")
+    st.subheader("Profilo Infermieri")
+    st.caption("Profilo del singolo Infermiere per livello di competenza.")
 
     # Selezione infermiere
     df_id = df_work[["ID", "Nome", "Cognome", "Struttura"]].copy()
@@ -279,7 +279,7 @@ with tab_mon:
     # -------------------- Toggle competenze in visualizzazione --------------------
     scope_mode = st.radio(
         "Competenze in visualizzazione",
-        ["Solo Trasversali", "Trasversali + Specifiche struttura"],
+        ["Competenze Trasversali", "Competenze Trasversali e Specifiche"],
         horizontal=True,
         help="Influenza barre/percentili e dettaglio competenze. Il Radar resta sempre sulle 8 Trasversali.",
         key="scout_scope_mode",
@@ -310,7 +310,7 @@ with tab_mon:
     # ------------------------------------------------------------
     # 1) Profilo anagrafico & sintesi dimensioni (0–100)
     # ------------------------------------------------------------
-    st.markdown("## Profilo Anagrafico & Profilo")
+    st.markdown("## Profilo")
 
     c1, c2, c3 = st.columns([2, 2, 2])
 
@@ -368,7 +368,8 @@ with tab_mon:
     # ------------------------------------------------------------
     # 3) Barre: profilo dimensioni (0–100) sullo scope selezionato
     # ------------------------------------------------------------
-    st.markdown("## Profilo di Competenza (barre 0–100)")
+    st.markdown("## Grafico del Profilo di Competenza")
+    st.subheader("Grafico a barre per ogni singola dimensione di competenza.")
 
     dims_all = list(codes_by_dim.keys())
     if dims_all:
@@ -396,7 +397,7 @@ with tab_mon:
     # ------------------------------------------------------------
     # 4) Percentili globali (rispetto ai colleghi del file caricato)
     # ------------------------------------------------------------
-    st.markdown("## Posizione rispetto ai percentili globali")
+    st.markdown("## Posizione rispetto al percentile rispetto alla distribuzione del proprio reparto.")
 
     rows_pct = []
     for dim in dims_all:
@@ -480,69 +481,10 @@ with tab_mon:
 
     comp_df = pd.DataFrame(rows_comp)
 
-    # -------------------- Visione d'insieme --------------------
-    st.markdown("### Visione d'insieme")
-
-    dim_rows = []
-    for dim, codes in codes_by_dim.items():
-        vals = df_num.loc[target_idx, codes]
-        coverage = float((vals != 0).sum() / max(len(codes), 1) * 100)
-        score = float(row_dims[dim]) if dim in row_dims else 0.0
-
-        global_scores = df_dims[dim].dropna().astype(float).values if dim in df_dims.columns else np.array([])
-        if len(global_scores) > 0:
-            pct = (float(np.sum(global_scores <= score)) / float(len(global_scores))) * 100.0
-        else:
-            pct = np.nan
-
-        dim_rows.append(
-            {
-                "Dimensione": dim,
-                "Score": round(score, 1),
-                "Copertura_%": round(coverage, 1),
-                "Percentile_globale": round(float(pct), 1) if np.isfinite(pct) else np.nan,
-                "N_competenze": int(len(codes)),
-            }
-        )
-
-    dim_over = pd.DataFrame(dim_rows)
-
-    if dim_over.empty:
-        st.info("Nessuna competenza disponibile nel profilo per lo scope selezionato.")
-    else:
-        over_chart = (
-            alt.Chart(dim_over)
-            .mark_bar(**BAR_BORDER)
-            .encode(
-                y=alt.Y("Dimensione:N", sort=dims_all, title=None),
-                x=alt.X("Score:Q", title="Score 0–100", scale=alt.Scale(domain=[0, 100])),
-                color=alt.Color("Score:Q", scale=COLOR_SCALE, legend=None),
-                tooltip=[
-                    alt.Tooltip("Dimensione:N"),
-                    alt.Tooltip("Score:Q", format=".1f"),
-                    alt.Tooltip("Copertura_%:Q", format=".1f"),
-                    alt.Tooltip("Percentile_globale:Q", format=".1f"),
-                    alt.Tooltip("N_competenze:Q"),
-                ],
-            )
-            .properties(height=min(720, 28 * max(8, len(dim_over))))
-        )
-        st.altair_chart(over_chart, use_container_width=True)
-
-        show_dim_table = st.toggle(
-            "Mostra tabella riepilogo (dimensioni)",
-            value=False,
-            key="scout_show_dim_table",
-        )
-        if show_dim_table:
-            st.dataframe(
-                dim_over[["Dimensione", "Score", "Copertura_%", "Percentile_globale", "N_competenze"]],
-                hide_index=True,
-                use_container_width=True,
-            )
+    
 
     # -------------------- Singole competenze: Expander --------------------
-    st.markdown("### Singole competenze (per dimensione)")
+    st.markdown("### Elenco delle competenze raggruppate per dimensione")
 
     q = st.text_input("Cerca competenza", value="", key="scout_search_comp")
     view_comp = comp_df.copy()
@@ -674,7 +616,7 @@ with tab_edit:
     st.markdown("<div class='card'>", unsafe_allow_html=True)
     c1, c2 = st.columns([1.2, 1])
     with c1:
-        st.subheader("Score per Dimensione (live)")
+        st.subheader("Punteggio per ogni dimensione")
         st.dataframe(dim_scores, use_container_width=True, hide_index=True)
     with c2:
         tot = round(float(dim_scores["Score_% (0–100)"].mean()) if len(dim_scores) else 0.0, 1)
@@ -720,5 +662,3 @@ with tab_edit:
     )
 
     st.markdown("</div>", unsafe_allow_html=True)
-
-st.caption("Config: `config/structure_dimensions.yml` (mappa Struttura→Dimensioni) · `config/column_order.json` (ordine colonne).")
