@@ -30,7 +30,7 @@ STYLE_PATH = APP_DIR / "assets" / "style.css"
 # ------------------------------------------------------------
 st.set_page_config(
     page_title="APPGrade — Reparto",
-    page_icon="🩺",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -76,18 +76,18 @@ if css:
     st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
 # Header
-st.title("🩺 APPGrade — Nursing Competencies (Reparto)")
+st.title("Pannello di Competenze")
 st.markdown(
-    "Carica il file del tuo reparto per **monitorare** le competenze e **modificare** i livelli degli infermieri "
-    "con download finale in **.xlsx** con struttura colonne **uniforme**."
+    "Carica il file del tuo reparto per **monitorare** le competenze e **modificare** i livelli degli Infermieri "
+    "con download finale in file excel **.xlsx**."
 )
 
 with st.sidebar:
-    st.markdown("### 1) Carica dataset di reparto")
+    st.markdown("### 1) Carica file")
     uploaded = st.file_uploader("File Excel (.xlsx)", type=["xlsx"], accept_multiple_files=False)
 
 if uploaded is None:
-    st.info("Carica un dataset di reparto in formato .xlsx per iniziare.")
+    st.info("Carica il di reparto in formato .xlsx per iniziare.")
     st.stop()
 
 # Hash upload to re-init session (evita residui in session_state)
@@ -142,11 +142,11 @@ else:
 
 with st.sidebar:
     st.markdown("---")
-    st.markdown("### 2) Mappa Struttura → Dimensioni")
+    st.markdown("### 2) Dimensioni di competenza")
     st.markdown(f"<div class='pill'>Struttura: {structure or '—'}</div>", unsafe_allow_html=True)
 
     selected_dims = st.multiselect(
-        "Dimensioni specifiche (oltre alle Trasversali)",
+        "Competenze Specifiche",
         options=spec_dims,
         default=st.session_state.get("selected_dimensions", default_dims),
         help="Le Trasversali sono sempre incluse. Qui selezioni le Dimensioni specifiche del reparto.",
@@ -157,7 +157,7 @@ with st.sidebar:
         st.info("Struttura non presente nella mappa: scegli manualmente le Dimensioni specifiche da includere.")
 
     st.markdown("---")
-    st.caption("Download sempre uniforme: colonne non visibili impostate a NA.")
+    st.caption("")
 
 # ------------------------------------------------------------
 # Inizializza df_work: schema uniforme + normalizzazione livelli
@@ -185,7 +185,7 @@ editable_codes = scope_df["Codice"].tolist()
 # ------------------------------------------------------------
 # Layout: due sezioni sulla stessa pagina
 # ------------------------------------------------------------
-tab_mon, tab_edit = st.tabs(["📊 Monitoraggio", "🛠️ Modifica & Download"])
+tab_mon, tab_edit = st.tabs(["Monitoraggio", "Modifica & Download"])
 
 # ---------------- Monitoraggio ----------------
 with tab_mon:
@@ -199,8 +199,8 @@ with tab_mon:
 
     # ---------------- Vista Struttura ----------------
     st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.subheader("Vista Struttura — score medio per Dimensione (0–100)")
-    st.caption("Score = media dei livelli (1–5) × 20, ignorando NA (0).")
+    st.subheader("Livelli medi di Competenza del reparto")
+    st.caption("Grafico a barre dei livelli medi per dimensioni di competenze trasversali e specifiche.")
 
     rows = []
     for dim, codes in codes_by_dim.items():
@@ -251,8 +251,8 @@ with tab_mon:
 
     # ---------------- Vista per infermiere (Scout Report) ----------------
     st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.subheader("Vista per infermiere — Scout Report (senza clustering)")
-    st.caption("Profilo individuale: radar, barre 0–100, percentili globali e livelli competenze (NA/N/Pav/C/A/E).")
+    st.subheader("Profilo Infermiere")
+    st.caption("Profilo del singolo Infermiere selezionato.")
 
     # Selezione infermiere
     df_id = df_work[["ID", "Nome", "Cognome", "Struttura"]].copy()
@@ -279,7 +279,7 @@ with tab_mon:
     # -------------------- Toggle competenze in visualizzazione --------------------
     scope_mode = st.radio(
         "Competenze in visualizzazione",
-        ["Solo Trasversali", "Trasversali + Specifiche struttura"],
+        ["Competenze Trasversali", "Competenze Trasversali e Specifiche"],
         horizontal=True,
         help="Influenza barre/percentili e dettaglio competenze. Il Radar resta sempre sulle 8 Trasversali.",
         key="scout_scope_mode",
@@ -310,7 +310,7 @@ with tab_mon:
     # ------------------------------------------------------------
     # 1) Profilo anagrafico & sintesi dimensioni (0–100)
     # ------------------------------------------------------------
-    st.markdown("## Profilo Anagrafico & Profilo")
+    st.markdown("### Profilo")
 
     c1, c2, c3 = st.columns([2, 2, 2])
 
@@ -335,7 +335,7 @@ with tab_mon:
     # ------------------------------------------------------------
     # 2) Radar (solo Trasversali: 8 dimensioni DPS)
     # ------------------------------------------------------------
-    st.markdown("## Radar dimensioni della Competenza (Trasversali)")
+    st.markdown("### Grafico Radar")
 
     DIMENSIONS_ORDER = ['Collaborazione e comunicazione', 'Etica, Equità e Advocacy', 'Evidence Based Practice (EBP)', 'Leadership e cultura assistenziale', 'Educazione', "Presa in carico e pianificazione dell'assistenza", 'Sicurezza e qualità delle cure', 'Sviluppo professionale']
     DIMS_RADAR = [d for d in DIMENSIONS_ORDER if d in df_dims.columns]
@@ -368,7 +368,7 @@ with tab_mon:
     # ------------------------------------------------------------
     # 3) Barre: profilo dimensioni (0–100) sullo scope selezionato
     # ------------------------------------------------------------
-    st.markdown("## Profilo di Competenza (barre 0–100)")
+    st.markdown("## Livelli di Competenza")
 
     dims_all = list(codes_by_dim.keys())
     if dims_all:
@@ -396,7 +396,7 @@ with tab_mon:
     # ------------------------------------------------------------
     # 4) Percentili globali (rispetto ai colleghi del file caricato)
     # ------------------------------------------------------------
-    st.markdown("## Posizione rispetto ai percentili globali")
+    st.markdown("## Posizione rispetto ai percentili del reparto")
 
     rows_pct = []
     for dim in dims_all:
@@ -519,10 +519,10 @@ with tab_mon:
                 color=alt.Color("Score:Q", scale=COLOR_SCALE, legend=None),
                 tooltip=[
                     alt.Tooltip("Dimensione:N"),
-                    alt.Tooltip("Score:Q", format=".1f"),
-                    alt.Tooltip("Copertura_%:Q", format=".1f"),
-                    alt.Tooltip("Percentile_globale:Q", format=".1f"),
-                    alt.Tooltip("N_competenze:Q"),
+                    alt.Tooltip("Punteggio:Q", format=".1f"),
+                    alt.Tooltip("Copertura:Q", format=".1f"),
+                    alt.Tooltip("Percentile:Q", format=".1f"),
+                    alt.Tooltip("Competenze (n):Q"),
                 ],
             )
             .properties(height=min(720, 28 * max(8, len(dim_over))))
