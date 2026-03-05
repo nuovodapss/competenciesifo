@@ -41,23 +41,28 @@ st.set_page_config(
 COLOR_SCALE = alt.Scale(domain=[0, 100], range=["#d7191c", "#1a9641"])  # rosso→verde
 BAR_BORDER = {"stroke": "black", "strokeWidth": 1}
 
+
 @st.cache_data(show_spinner=False)
 def _load_guide():
     return load_guide(GUIDE_PATH)
+
 
 @st.cache_data(show_spinner=False)
 def _load_column_order():
     return load_column_order(COLUMN_ORDER_PATH)
 
+
 @st.cache_data(show_spinner=False)
 def _load_structure_dimensions():
     return load_structure_dimensions(STRUCTURE_DIMENSIONS_PATH)
+
 
 @st.cache_data(show_spinner=False)
 def _read_css():
     if STYLE_PATH.exists():
         return STYLE_PATH.read_text(encoding="utf-8")
     return ""
+
 
 guide = _load_guide()
 column_order = _load_column_order()
@@ -189,8 +194,9 @@ tab_mon, tab_edit = st.tabs(["📊 Monitoraggio", "🛠️ Modifica & Download"]
 
 # ---------------- Monitoraggio ----------------
 with tab_mon:
-    # Precalcoli (numerico 0..5) sullo scope selezionato
-    df_num = recode_df_to_num(df_work, editable_codes)
+    # Precalcoli (numerico 0..5) sullo scope selezionato (robusto a codici non presenti in df_work)
+    _editable_existing = [c for c in editable_codes if c in df_work.columns]
+    df_num = recode_df_to_num(df_work, _editable_existing)
 
     # Mapping Dimensione -> codici (ordine guida)
     codes_by_dim: dict[str, list[str]] = {}
@@ -207,7 +213,8 @@ with tab_mon:
         per = []
         coverage = []
         for _, r in df_num.iterrows():
-            vals = r[codes]
+            # reindex => eventuali codici mancanti trattati come NA (0)
+            vals = r.reindex(codes, fill_value=0)
             per.append(score_percent(vals))
             non_na = int((vals != 0).sum())
             coverage.append(float(non_na / max(len(codes), 1) * 100))
@@ -285,7 +292,7 @@ with tab_mon:
         key="scout_scope_mode",
     )
 
-    if scope_mode == "Solo Trasversali":
+    if scope_mode == "Competenze Trasversali":
         scout_scope_df = guide.df[guide.df["Codice"].astype(str).isin(TRANS_CODES)].copy()
     else:
         scout_scope_df = scope_df.copy()
@@ -302,10 +309,9 @@ with tab_mon:
     # Costruisco df dimensioni (0–100) per tutti, sullo scope selezionato
     df_dims = df_work[["ID", "Nome", "Cognome", "Struttura"]].copy().astype(str)
     for dim, codes in codes_by_dim.items():
-        df_dims[dim] = df_num[codes].apply(score_percent, axis=1)
+        df_dims[dim] = df_num.reindex(columns=codes, fill_value=0).apply(score_percent, axis=1)
 
     row_dims = df_dims[df_dims["ID"].astype(str) == target_id_str].iloc[0]
-
 
     # ------------------------------------------------------------
     # 1) Profilo anagrafico & sintesi dimensioni (0–100)
@@ -323,7 +329,6 @@ with tab_mon:
 
     with c2:
         st.markdown("**Sintesi dimensioni (0–100)**")
-        dims_all = list(codes_by_dim.keys())
         vals = [float(row_dims[d]) for d in dims_all] if dims_all else []
         mean_v = float(np.mean(vals)) if vals else np.nan
         min_v = float(np.min(vals)) if vals else np.nan
@@ -337,7 +342,16 @@ with tab_mon:
     # ------------------------------------------------------------
     st.markdown("## Radar dimensioni della Competenza (Trasversali)")
 
-    DIMENSIONS_ORDER = ['Collaborazione e comunicazione', 'Etica, Equità e Advocacy', 'Evidence Based Practice (EBP)', 'Leadership e cultura assistenziale', 'Educazione', "Presa in carico e pianificazione dell'assistenza", 'Sicurezza e qualità delle cure', 'Sviluppo professionale']
+    DIMENSIONS_ORDER = [
+        "Collaborazione e comunicazione",
+        "Etica, Equità e Advocacy",
+        "Evidence Based Practice (EBP)",
+        "Leadership e cultura assistenziale",
+        "Educazione",
+        "Presa in carico e pianificazione dell'assistenza",
+        "Sicurezza e qualità delle cure",
+        "Sviluppo professionale",
+    ]
     DIMS_RADAR = [d for d in DIMENSIONS_ORDER if d in df_dims.columns]
 
     if len(DIMS_RADAR) < 3:
@@ -371,11 +385,8 @@ with tab_mon:
     st.markdown("## Grafico del Profilo di Competenza")
     st.subheader("Grafico a barre per ogni singola dimensione di competenza.")
 
-    dims_all = list(codes_by_dim.keys())
     if dims_all:
-        dps_df = pd.DataFrame(
-            {"Dimensione": dims_all, "Score": [float(row_dims[d]) for d in dims_all]}
-        )
+        dps_df = pd.DataFrame({"Dimensione": dims_all, "Score": [float(row_dims[d]) for d in dims_all]})
 
         dps_chart = (
             alt.Chart(dps_df)
@@ -417,11 +428,7 @@ with tab_mon:
             .mark_bar(**BAR_BORDER)
             .encode(
                 y=alt.Y("Dimensione:N", sort=dims_all, title=None),
-                x=alt.X(
-                    "Percentile globale:Q",
-                    title="Percentile globale (%)",
-                    scale=alt.Scale(domain=[0, 100]),
-                ),
+                x=alt.X("Percentile globale:Q", title="Percentile globale (%)", scale=alt.Scale(domain=[0, 100])),
                 color=alt.Color("Percentile globale:Q", scale=COLOR_SCALE, legend=None),
                 tooltip=[alt.Tooltip("Dimensione:N"), alt.Tooltip("Percentile globale:Q", format=".1f")],
             )
@@ -468,6 +475,22 @@ with tab_mon:
         st.stop()
     target_idx = _target_idx[0]
 
+    # (FIX) overview per dimensione (score + copertura) per il titolo degli expander
+    dim_over_rows = []
+    for dim, codes in codes_by_dim.items():
+        vals = df_num.loc[target_idx].reindex(codes, fill_value=0)
+        score = float(score_percent(vals))
+        cov = float((vals != 0).sum()) / float(max(len(codes), 1)) * 100.0
+        dim_over_rows.append(
+            {
+                "Dimensione": dim,
+                "Score": round(score, 1),
+                "Copertura_%": round(cov, 1),
+                "N_competenze": int(len(codes)),
+            }
+        )
+    dim_over = pd.DataFrame(dim_over_rows)
+
     rows_comp = []
     for code in sorted_codes:
         level = normalize_level(df_work.loc[target_idx, code]) if code in df_work.columns else "NA"
@@ -480,8 +503,6 @@ with tab_mon:
         )
 
     comp_df = pd.DataFrame(rows_comp)
-
-    
 
     # -------------------- Singole competenze: Expander --------------------
     st.markdown("### Elenco delle competenze raggruppate per dimensione")
@@ -528,6 +549,7 @@ with tab_mon:
             )
 
     st.markdown("</div>", unsafe_allow_html=True)
+
 # ---------------- Modifica ----------------
 with tab_edit:
     st.markdown("<div class='card'>", unsafe_allow_html=True)
@@ -535,17 +557,24 @@ with tab_edit:
     st.caption("Seleziona un infermiere e modifica i livelli (NA, N, Pav, C, A, E). Premi **Salva** per applicare.")
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # nurse selector
-    df_id = df_work[["ID", "Cognome", "Nome"]].astype(str)
-    df_id["label"] = df_id["ID"] + " — " + df_id["Cognome"] + " " + df_id["Nome"]
-    labels = df_id["label"].tolist()
+    # nurse selector (FIX: usa ID -> index reale del df, non la posizione in lista)
+    df_id = df_work[["ID", "Cognome", "Nome"]].copy()
+    df_id["ID_str"] = df_id["ID"].astype(str)
+    df_id["label"] = df_id["ID_str"] + " — " + df_id["Cognome"].astype(str) + " " + df_id["Nome"].astype(str)
 
+    labels = df_id["label"].tolist()
     if not labels:
         st.error("Nel file non risultano infermieri (righe) da modificare.")
         st.stop()
 
-    sel_label = st.selectbox("Seleziona infermiere", options=labels)
-    idx = labels.index(sel_label)
+    sel_label = st.selectbox("Seleziona infermiere", options=labels, key="edit_select_nurse")
+    sel_id = df_id.loc[df_id["label"] == sel_label, "ID_str"].iloc[0]
+
+    idx_list = df_work.index[df_work["ID"].astype(str) == sel_id].tolist()
+    if not idx_list:
+        st.error("Infermiere selezionato non trovato nel dataset.")
+        st.stop()
+    idx = idx_list[0]  # index label del df_work
 
     # Editor dataframe: guida + livello corrente
     current_levels = []
@@ -558,7 +587,7 @@ with tab_edit:
     # Filtri
     f1, f2 = st.columns([1, 2])
     with f1:
-        dim_options = list(editor_df["Dimensione"].unique())
+        dim_options = [d for d in editor_df["Dimensione"].dropna().unique().tolist()]
         dim_filter = st.multiselect(
             "Filtra Dimensione",
             options=dim_options,
@@ -588,7 +617,7 @@ with tab_edit:
                 width="small",
             )
         },
-        key=f"editor_{df_work.loc[idx,'ID']}",
+        key=f"editor_{sel_id}",
     )
 
     # Applica edits subset al dataset completo del singolo infermiere
@@ -650,10 +679,10 @@ with tab_edit:
                 export_df[c] = "NA"
 
     # Uniforma: solo schema canonico (base + tutte le competenze)
-    export_df = export_df[column_order]
+    export_df = export_df.reindex(columns=column_order)
 
     xlsx_bytes = to_excel_bytes(export_df)
-    fname = f"competenze_{(structure or 'struttura').replace(' ','_')}.xlsx"
+    fname = f"competenze_{(structure or 'struttura').replace(' ', '_')}.xlsx"
     st.download_button(
         label="⬇️ Scarica Excel aggiornato",
         data=xlsx_bytes,
