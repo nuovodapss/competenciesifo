@@ -72,9 +72,9 @@ def _render_radar_plot(dims_all: list[str], radar_values: list[float], title: st
         showlegend=False,
         paper_bgcolor="white",
         plot_bgcolor="white",
-        margin=dict(l=10, r=10, t=10, b=10),
-        height=420,
-        width=420,
+        margin=dict(l=60, r=60, t=40, b=40),
+        height=520,
+        width=520,
         polar=dict(
             bgcolor="white",
             radialaxis=dict(
@@ -90,7 +90,7 @@ def _render_radar_plot(dims_all: list[str], radar_values: list[float], title: st
                 linewidth=1,
             ),
             angularaxis=dict(
-                tickfont=dict(size=11, color="#111"),
+                tickfont=dict(size=9, color="#111"),
                 gridcolor="#E6E6E6",
                 linecolor="#BFBFBF",
                 linewidth=1,
