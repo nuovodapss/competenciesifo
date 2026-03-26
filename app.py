@@ -4,12 +4,14 @@ import hashlib
 from pathlib import Path
 
 import re
+import textwrap
 import numpy as np
 
 import pandas as pd
 import streamlit as st
 import altair as alt
-import plotly.graph_objects as go
+import matplotlib.pyplot as plt
+from mplsoccer import PyPizza
 
 from utils.export import to_excel_bytes
 from utils.guide import load_guide
@@ -40,6 +42,65 @@ st.set_page_config(
 # ------------------------------------------------------------
 COLOR_SCALE = alt.Scale(domain=[0, 100], range=["#d7191c", "#1a9641"])  # rosso→verde
 BAR_BORDER = {"stroke": "black", "strokeWidth": 1}
+
+
+def _wrap_pizza_label(text: str, width: int = 18) -> str:
+    txt = str(text).strip()
+    if not txt:
+        return txt
+    return "\n".join(textwrap.wrap(txt, width=width, break_long_words=False, break_on_hyphens=False))
+
+
+def _render_pizza_plot(labels: list[str], values: list[float], title: str):
+    if len(labels) < 2:
+        st.info("Pizza Plot non disponibile: servono almeno 2 dimensioni nello scope selezionato.")
+        return
+
+    wrapped_labels = [_wrap_pizza_label(lbl) for lbl in labels]
+    clean_values = [max(0.0, min(100.0, float(v))) if pd.notna(v) else 0.0 for v in values]
+
+    app_green = "#1B7F5A"
+    soft_bg = "#F5FAF7"
+    n = len(labels)
+    fig_size = max(8.2, min(12.5, 7.2 + n * 0.32))
+    param_font = 12 if n <= 8 else 11 if n <= 12 else 10
+    value_font = 11 if n <= 10 else 10
+
+    fig, ax = plt.subplots(figsize=(fig_size, fig_size), facecolor=soft_bg)
+    pizza = PyPizza(
+        params=wrapped_labels,
+        background_color=soft_bg,
+        straight_line_color="#000000",
+        straight_line_lw=1.05,
+        last_circle_color="#000000",
+        last_circle_lw=1.8,
+        other_circle_color="#A7B8AD",
+        other_circle_lw=0.9,
+        inner_circle_size=20,
+    )
+
+    slice_colors = [app_green] * n
+
+    pizza.make_pizza(
+        clean_values,
+        ax=ax,
+        color_blank_space="same",
+        slice_colors=slice_colors,
+        value_bck_colors=slice_colors,
+        blank_alpha=0.18,
+        kwargs_slices=dict(edgecolor="black", linewidth=0.9),
+        kwargs_params=dict(color="black", fontsize=param_font, va="center"),
+        kwargs_values=dict(
+            color="black",
+            fontsize=value_font,
+            bbox=dict(boxstyle="round,pad=0.24", facecolor="white", edgecolor="black", linewidth=0.9),
+        ),
+    )
+
+    fig.text(0.5, 0.965, title, ha="center", va="center", fontsize=18, fontweight="bold", color="black")
+    fig.text(0.5, 0.932, "Score dimensioni 0–100", ha="center", va="center", fontsize=11, color="black")
+    st.pyplot(fig, use_container_width=True)
+    plt.close(fig)
 
 @st.cache_data(show_spinner=False)
 def _load_guide():
@@ -298,14 +359,19 @@ with tab_mon:
     # -------------------- Toggle competenze in visualizzazione --------------------
     scope_mode = st.radio(
         "Competenze in visualizzazione",
-        ["Competenze Trasversali", "Competenze Trasversali e Specifiche"],
+        ["Competenze Trasversali", "Competenze Specifiche", "Competenze Trasversali e Specifiche"],
         horizontal=True,
-        help="Influenza barre/percentili e dettaglio competenze. Il radar usa sempre le dimensioni trasversali.",
+        help="Influenza Pizza Plot, barre, percentili e dettaglio competenze.",
         key="scout_scope_mode",
     )
 
     if scope_mode == "Competenze Trasversali":
         scout_scope_df = guide.df[guide.df["Codice"].astype(str).isin(TRANS_CODES)].copy()
+    elif scope_mode == "Competenze Specifiche":
+        scout_scope_df = guide.df[
+            (~guide.df["Codice"].astype(str).isin(TRANS_CODES))
+            & (guide.df["Dimensione"].astype(str).isin(selected_dims))
+        ].copy()
     else:
         scout_scope_df = scope_df.copy()
 
@@ -324,18 +390,6 @@ with tab_mon:
         df_dims[dim] = df_num[codes].apply(score_percent, axis=1)
 
     row_dims = df_dims[df_dims["ID"].astype(str) == target_id_str].iloc[0]
-
-    # Dimensioni trasversali dedicate al radar
-    trans_codes_by_dim: dict[str, list[str]] = {}
-    for dim, g in trans_df.groupby("Dimensione", sort=False):
-        trans_codes_by_dim[str(dim)] = [c for c in g["Codice"].astype(str).tolist() if c in df_num.columns]
-
-    df_dims_trans = df_work[["ID", "Nome", "Cognome", "Struttura"]].copy().astype(str)
-    for dim, codes in trans_codes_by_dim.items():
-        df_dims_trans[dim] = df_num[codes].apply(score_percent, axis=1) if codes else 0.0
-
-    row_dims_trans = df_dims_trans[df_dims_trans["ID"].astype(str) == target_id_str].iloc[0]
-
 
     # ------------------------------------------------------------
     # 1) Profilo anagrafico & sintesi dimensioni (0–100)
@@ -363,34 +417,19 @@ with tab_mon:
         st.metric("Max", f"{max_v:.1f}" if np.isfinite(max_v) else "—")
 
     # ------------------------------------------------------------
-    # 2) Radar (solo Trasversali: 8 dimensioni DPS)
+    # 2) Pizza Plot sullo scope selezionato
     # ------------------------------------------------------------
-    st.markdown("### Grafico Radar")
+    st.markdown("### Pizza Plot")
 
-    DIMS_RADAR = [d for d in TRANS_DIMENSIONS if d in df_dims_trans.columns]
-
-    if len(DIMS_RADAR) < 3:
-        st.info("Radar non disponibile: servono almeno 3 dimensioni trasversali nel dataset.")
+    if dims_all:
+        pizza_values = [float(row_dims[d]) for d in dims_all]
+        _render_pizza_plot(
+            dims_all,
+            pizza_values,
+            f"{scope_mode} — profilo dimensionale",
+        )
     else:
-        r_vals = [float(row_dims_trans[d]) for d in DIMS_RADAR]
-        radar_fig = go.Figure()
-        radar_fig.add_trace(
-            go.Scatterpolar(
-                r=r_vals + [r_vals[0]],
-                theta=DIMS_RADAR + [DIMS_RADAR[0]],
-                name="Profilo",
-                line=dict(color="black", width=2),
-                fill="toself",
-                fillcolor="rgba(28,130,62,0.25)",
-            )
-        )
-        radar_fig.update_layout(
-            showlegend=False,
-            polar=dict(radialaxis=dict(range=[0, 100])),
-            height=420,
-            margin=dict(l=10, r=10, t=10, b=10),
-        )
-        st.plotly_chart(radar_fig, use_container_width=True)
+        st.info("Pizza Plot non disponibile: nessuna dimensione nello scope selezionato.")
 
     st.markdown("---")
 
