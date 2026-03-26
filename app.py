@@ -55,37 +55,39 @@ def _render_pizza_plot(labels: list[str], values: list[float], title: str):
         st.info("Pizza Plot non disponibile: servono almeno 2 dimensioni nello scope selezionato.")
         return
 
-    wrapped_labels = [_wrap_pizza_label(lbl) for lbl in labels]
+    wrapped_labels = [_wrap_pizza_label(lbl, width=16) for lbl in labels]
     clean_values = [max(0.0, min(100.0, float(v))) if pd.notna(v) else 0.0 for v in values]
 
     app_green = "#1B7F5A"
-    soft_bg = "#F5FAF7"
-    pale_green = "#DCEEE6"
-    grid_color = "#A7B8AD"
+    pale_green = "#E7F3EC"
+    white_bg = "#FFFFFF"
+    grid_color = "#A9B4AE"
     n = len(labels)
-    fig_size = max(8.4, min(13.0, 7.6 + n * 0.34))
-    param_font = 12 if n <= 8 else 11 if n <= 12 else 10
+    fig_size = max(8.2, min(12.6, 7.0 + n * 0.42))
+    label_font = 12 if n <= 8 else 11 if n <= 12 else 10
     value_font = 11 if n <= 10 else 10
 
     try:
-        fig = plt.figure(figsize=(fig_size, fig_size), facecolor=soft_bg)
+        fig = plt.figure(figsize=(fig_size, fig_size), facecolor=white_bg)
         ax = fig.add_subplot(111, projection="polar")
-        ax.set_facecolor(soft_bg)
+        ax.set_facecolor(white_bg)
+        fig.subplots_adjust(top=0.82, bottom=0.06, left=0.05, right=0.95)
+
         ax.set_theta_offset(np.pi / 2)
         ax.set_theta_direction(-1)
-        ax.set_ylim(0, 118)
+        ax.set_ylim(0, 110)
         ax.spines["polar"].set_visible(False)
         ax.xaxis.grid(False)
-        ax.yaxis.grid(True, color=grid_color, linewidth=0.85, alpha=0.85)
+        ax.yaxis.grid(True, color=grid_color, linestyle="--", linewidth=0.8, alpha=0.9)
         ax.set_yticks([20, 40, 60, 80, 100])
-        ax.set_yticklabels(["20", "40", "60", "80", "100"], fontsize=9, color="black")
-        ax.set_rlabel_position(92)
+        ax.set_yticklabels(["20", "40", "60", "80", "100"], fontsize=10, color="black")
+        ax.set_rlabel_position(90)
         ax.set_xticks([])
 
         angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
-        width = (2 * np.pi / n) * 0.88
+        width = (2 * np.pi / n) * 0.96
 
-        # Base slices
+        # very light full slices up to 100, like the reference aesthetic
         ax.bar(
             angles,
             [100] * n,
@@ -93,12 +95,13 @@ def _render_pizza_plot(labels: list[str], values: list[float], title: str):
             bottom=0,
             color=pale_green,
             edgecolor="black",
-            linewidth=0.9,
+            linewidth=1.0,
             align="center",
             zorder=1,
+            alpha=1.0,
         )
 
-        # Actual values
+        # filled performance slices
         ax.bar(
             angles,
             clean_values,
@@ -106,18 +109,13 @@ def _render_pizza_plot(labels: list[str], values: list[float], title: str):
             bottom=0,
             color=app_green,
             edgecolor="black",
-            linewidth=1.05,
+            linewidth=1.0,
             align="center",
             zorder=3,
-            alpha=0.96,
+            alpha=0.94,
         )
 
-        # Central white disc for a cleaner pizza look
-        centre = plt.Circle((0.5, 0.5), 0.16, transform=ax.transAxes, color="white", ec="black", lw=1.0, zorder=4)
-        ax.add_artist(centre)
-        ax.text(0.5, 0.5, "0–100", transform=ax.transAxes, ha="center", va="center", fontsize=13, fontweight="bold", zorder=5)
-
-        # Labels around the pizza
+        # labels around the pizza
         for angle, label in zip(angles, wrapped_labels):
             rotation = np.degrees(angle)
             ha = "left"
@@ -126,20 +124,20 @@ def _render_pizza_plot(labels: list[str], values: list[float], title: str):
                 ha = "right"
             ax.text(
                 angle,
-                112,
+                109,
                 label,
                 ha=ha,
                 va="center",
                 rotation=rotation,
                 rotation_mode="anchor",
-                fontsize=param_font,
+                fontsize=label_font,
                 color="black",
                 zorder=6,
             )
 
-        # Value boxes
+        # values in small boxes matching the slice color, like the reference
         for angle, val in zip(angles, clean_values):
-            value_r = min(max(val + 7, 14), 96)
+            value_r = min(max(val + 4, 11), 98)
             ax.text(
                 angle,
                 value_r,
@@ -147,13 +145,22 @@ def _render_pizza_plot(labels: list[str], values: list[float], title: str):
                 ha="center",
                 va="center",
                 fontsize=value_font,
-                color="black",
-                bbox=dict(boxstyle="round,pad=0.24", facecolor="white", edgecolor="black", linewidth=0.9),
+                color="white",
+                bbox=dict(
+                    boxstyle="round,pad=0.20",
+                    facecolor=app_green,
+                    edgecolor="black",
+                    linewidth=0.9,
+                ),
                 zorder=7,
             )
 
-        fig.text(0.5, 0.968, title, ha="center", va="center", fontsize=18, fontweight="bold", color="black")
-        fig.text(0.5, 0.936, "Score dimensioni 0–100", ha="center", va="center", fontsize=11, color="black")
+        # small center dot instead of the large donut
+        centre = plt.Circle((0.5, 0.5), 0.022, transform=ax.transAxes, color="white", ec="black", lw=1.0, zorder=8)
+        ax.add_artist(centre)
+
+        fig.text(0.5, 0.962, title, ha="center", va="center", fontsize=22, fontweight="bold", color="black")
+        fig.text(0.5, 0.925, "Score dimensioni 0–100", ha="center", va="center", fontsize=12, color="black")
         st.pyplot(fig, use_container_width=True)
     except Exception:
         st.info("Pizza Plot temporaneamente non disponibile. Restano visibili barre e percentili qui sotto.")
