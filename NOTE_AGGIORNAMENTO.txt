@@ -1,37 +1,21 @@
-Aggiornamento applicativo — 2026-03-26
+Aggiornamento applicativo - fix Pizza Plot stabile
 
-Modifiche applicate
-- Sostituito data/guida_competenze.xlsx con il file "File Definitivo (Guida Competenze).xlsx".
-- Rigenerato config/structure_dimensions.yml dal file "Mappatura Reparto-Area.xlsx".
-- Rigenerato config/column_order.json a partire dai codici della guida, in ordine di apparizione e senza duplicati nello schema.
-- Corretto il selettore "Competenze in visualizzazione" nel profilo infermiere.
-- Aggiornato il radar per usare le dimensioni trasversali reali della guida.
-- Aggiunto un avviso in app quando la guida contiene codici duplicati.
+Modifiche principali
+- Guida competenze aggiornata con il file definitivo.
+- Mappatura Struttura -> Dimensioni aggiornata dal file Mappatura Reparto-Area.
+- Codici duplicati PER1/PER2/PER3 corretti in PRC1/PRC2/PRC3 per Gestione Sale Operatorie ad Alta Complessita.
+- Sostituito il Radar con un Pizza Plot.
+- Aggiunte 3 viste nel profilo infermiere:
+  - Competenze Trasversali
+  - Competenze Specifiche
+  - Competenze Trasversali e Specifiche
 
-Criticità ereditata dai file sorgente
-- Nel file guida risultano codici duplicati: PER1, PER2, PER3.
-  Questo significa che nell'Excel esportato questi codici continuano a corrispondere a una sola colonna ciascuno.
-  Per separare davvero le competenze duplicate servirebbe una revisione del file guida con codici univoci.
+Fix tecnico importante
+- Rimosso completamente mplsoccer / PyPizza.
+- Il Pizza Plot e ora disegnato con Matplotlib polar nativo.
+- requirements.txt non richiede piu mplsoccer.
 
-
-Aggiornamento 2026-03-26 (codici corretti):
-- I codici duplicati PER1, PER2, PER3 nella sezione "Gestione Sale Operatorie ad Alta Complessità" sono stati sostituiti con PRC1, PRC2, PRC3.
-- Il file guida e l'ordine colonne dell'app sono stati riallineati a questa correzione.
-
-Stato attuale verifica:
-- Dopo la correzione PRC1-PRC3 non risultano più codici duplicati nel file guida.
-- column_order.json è stato rigenerato dai codici univoci presenti nella guida aggiornata.
-
-
-Aggiornamento 2026-03-26 (Pizza Plot)
-- Sostituito il Radar del profilo infermiere con un Pizza Plot in stile mplsoccer.
-- Aggiunto selettore a 3 viste: Competenze Trasversali / Competenze Specifiche / Competenze Trasversali e Specifiche.
-- Gli spicchi del Pizza Plot usano il verde applicativo (#1B7F5A).
-- Aggiornate le dipendenze dell'app con matplotlib e mplsoccer.
-
-
-Fix 2026-03-26 (pizza):
-- corretto asse Matplotlib del Pizza Plot: ora usa projection="polar" compatibile con PyPizza
-- aggiunto fallback: se PyPizza fallisce, l'app non va in crash e restano visibili barre e percentili
-
-- rimosso l'uso di mplsoccer/PyPizza: il Pizza Plot ora è disegnato con Matplotlib polar nativo, evitando l'errore ax.set_rorigin su Streamlit Cloud.
+Perche questo fix risolve l'errore visto su Streamlit Cloud
+- Il traceback precedente chiamava pizza.make_pizza(...) e py_pizza.py.
+- In questa versione app.py non contiene piu alcun richiamo a PyPizza.
+- Se dopo il deploy compare ancora lo stesso traceback con pizza.make_pizza, Streamlit Cloud sta ancora eseguendo una versione vecchia del repo.
