@@ -118,7 +118,7 @@ def _render_radar_plot(labels: list[str], values: list[float], title: str | None
             paper_bgcolor="white",
             plot_bgcolor="white",
             margin=dict(l=40, r=40, t=20, b=20),
-            height=400 if n <= 8 else 760 if n <= 11 else 840,
+            height=200 if n <= 8 else 760 if n <= 11 else 840,
             polar=dict(
                 bgcolor="white",
                 radialaxis=dict(
