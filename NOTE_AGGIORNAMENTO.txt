@@ -1,0 +1,14 @@
+Aggiornamento applicativo — 2026-03-26
+
+Modifiche applicate
+- Sostituito data/guida_competenze.xlsx con il file "File Definitivo (Guida Competenze).xlsx".
+- Rigenerato config/structure_dimensions.yml dal file "Mappatura Reparto-Area.xlsx".
+- Rigenerato config/column_order.json a partire dai codici della guida, in ordine di apparizione e senza duplicati nello schema.
+- Corretto il selettore "Competenze in visualizzazione" nel profilo infermiere.
+- Aggiornato il radar per usare le dimensioni trasversali reali della guida.
+- Aggiunto un avviso in app quando la guida contiene codici duplicati.
+
+Criticità ereditata dai file sorgente
+- Nel file guida risultano codici duplicati: PER1, PER2, PER3.
+  Questo significa che nell'Excel esportato questi codici continuano a corrispondere a una sola colonna ciascuno.
+  Per separare davvero le competenze duplicate servirebbe una revisione del file guida con codici univoci.

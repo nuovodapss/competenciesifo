@@ -8,7 +8,9 @@ BASE_FIELDS = ["ID", "Nome", "Cognome", "Struttura"]
 def load_column_order(path: str | Path) -> list[str]:
     path = Path(path)
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        cols = json.load(f)
+    # preserva il primo ordine ed evita duplicati accidentali
+    return list(dict.fromkeys(cols))
 
 def ensure_schema(df: pd.DataFrame, column_order: list[str], fill_value: str = "NA") -> pd.DataFrame:
     """Ensure all columns exist; add missing as fill_value; return df with columns ordered.

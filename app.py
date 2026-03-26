@@ -67,8 +67,12 @@ all_codes = column_order[4:]  # after ID, Nome, Cognome, Struttura
 
 # Trasversali: sempre inclusi e sempre modificabili
 trans_df = guide.df[guide.df["Pannello"].astype(str).str.strip().str.lower() == "trasversali"].copy()
-TRANS_CODES = trans_df["Codice"].astype(str).tolist()
-TRANS_DIMENSIONS = trans_df["Dimensione"].astype(str).unique().tolist()
+TRANS_CODES = list(dict.fromkeys(trans_df["Codice"].astype(str).tolist()))
+TRANS_DIMENSIONS = trans_df["Dimensione"].astype(str).drop_duplicates().tolist()
+
+# Duplicati nel file guida: il codice rimane unico nello schema dati, ma lo segnaliamo
+duplicate_code_counts = guide.df["Codice"].astype(str).value_counts()
+DUPLICATE_CODES = duplicate_code_counts[duplicate_code_counts > 1].index.tolist()
 
 # CSS
 css = _read_css()
@@ -87,7 +91,7 @@ with st.sidebar:
     uploaded = st.file_uploader("File Excel (.xlsx)", type=["xlsx"], accept_multiple_files=False)
 
 if uploaded is None:
-    st.info("Carica il di reparto in formato .xlsx per iniziare.")
+    st.info("Carica il file di reparto in formato .xlsx per iniziare.")
     st.stop()
 
 # Hash upload to re-init session (evita residui in session_state)
@@ -132,9 +136,13 @@ all_dims = guide.df["Dimensione"].dropna().astype(str).str.strip().unique().toli
 spec_dims = [d for d in all_dims if d not in TRANS_DIMENSIONS]
 
 # Default dimensioni per Struttura
+mapped_dims_raw = []
 default_dims = []
+unavailable_mapped_dims = []
 if structure and structure in structure_dim_map:
-    default_dims = structure_dim_map.get(structure, [])
+    mapped_dims_raw = structure_dim_map.get(structure, [])
+    default_dims = [d for d in mapped_dims_raw if d in spec_dims]
+    unavailable_mapped_dims = [d for d in mapped_dims_raw if d not in spec_dims]
 elif structure:
     default_dims = guess_dimensions_from_structure(structure, spec_dims)
 else:
@@ -155,9 +163,20 @@ with st.sidebar:
 
     if structure and structure not in structure_dim_map:
         st.info("Struttura non presente nella mappa: scegli manualmente le Dimensioni specifiche da includere.")
+    elif unavailable_mapped_dims:
+        st.info(
+            "Alcune dimensioni presenti nella mappa della struttura non sono disponibili nella guida competenze aggiornata: "
+            + ", ".join(unavailable_mapped_dims)
+        )
 
     st.markdown("---")
     st.caption("")
+
+if DUPLICATE_CODES:
+    st.warning(
+        "Nel file guida ci sono codici duplicati "
+        f"({', '.join(DUPLICATE_CODES)}). Nell'app restano associati a una sola colonna Excel per codice."
+    )
 
 # ------------------------------------------------------------
 # Inizializza df_work: schema uniforme + normalizzazione livelli
@@ -281,11 +300,11 @@ with tab_mon:
         "Competenze in visualizzazione",
         ["Competenze Trasversali", "Competenze Trasversali e Specifiche"],
         horizontal=True,
-        help="Influenza barre/percentili e dettaglio competenze. Il Radar resta sempre sulle 8 Trasversali.",
+        help="Influenza barre/percentili e dettaglio competenze. Il radar usa sempre le dimensioni trasversali.",
         key="scout_scope_mode",
     )
 
-    if scope_mode == "Solo Trasversali":
+    if scope_mode == "Competenze Trasversali":
         scout_scope_df = guide.df[guide.df["Codice"].astype(str).isin(TRANS_CODES)].copy()
     else:
         scout_scope_df = scope_df.copy()
@@ -305,6 +324,17 @@ with tab_mon:
         df_dims[dim] = df_num[codes].apply(score_percent, axis=1)
 
     row_dims = df_dims[df_dims["ID"].astype(str) == target_id_str].iloc[0]
+
+    # Dimensioni trasversali dedicate al radar
+    trans_codes_by_dim: dict[str, list[str]] = {}
+    for dim, g in trans_df.groupby("Dimensione", sort=False):
+        trans_codes_by_dim[str(dim)] = [c for c in g["Codice"].astype(str).tolist() if c in df_num.columns]
+
+    df_dims_trans = df_work[["ID", "Nome", "Cognome", "Struttura"]].copy().astype(str)
+    for dim, codes in trans_codes_by_dim.items():
+        df_dims_trans[dim] = df_num[codes].apply(score_percent, axis=1) if codes else 0.0
+
+    row_dims_trans = df_dims_trans[df_dims_trans["ID"].astype(str) == target_id_str].iloc[0]
 
 
     # ------------------------------------------------------------
@@ -337,13 +367,12 @@ with tab_mon:
     # ------------------------------------------------------------
     st.markdown("### Grafico Radar")
 
-    DIMENSIONS_ORDER = ['Collaborazione e comunicazione', 'Etica, Equità e Advocacy', 'Evidence Based Practice (EBP)', 'Leadership e cultura assistenziale', 'Educazione', "Presa in carico e pianificazione dell'assistenza", 'Sicurezza e qualità delle cure', 'Sviluppo professionale']
-    DIMS_RADAR = [d for d in DIMENSIONS_ORDER if d in df_dims.columns]
+    DIMS_RADAR = [d for d in TRANS_DIMENSIONS if d in df_dims_trans.columns]
 
     if len(DIMS_RADAR) < 3:
-        st.info("Radar non disponibile: servono almeno 3 dimensioni Trasversali nel dataset.")
+        st.info("Radar non disponibile: servono almeno 3 dimensioni trasversali nel dataset.")
     else:
-        r_vals = [float(row_dims[d]) for d in DIMS_RADAR]
+        r_vals = [float(row_dims_trans[d]) for d in DIMS_RADAR]
         radar_fig = go.Figure()
         radar_fig.add_trace(
             go.Scatterpolar(
@@ -519,10 +548,10 @@ with tab_mon:
                 color=alt.Color("Score:Q", scale=COLOR_SCALE, legend=None),
                 tooltip=[
                     alt.Tooltip("Dimensione:N"),
-                    alt.Tooltip("Punteggio:Q", format=".1f"),
-                    alt.Tooltip("Copertura:Q", format=".1f"),
-                    alt.Tooltip("Percentile:Q", format=".1f"),
-                    alt.Tooltip("Competenze (n):Q"),
+                    alt.Tooltip("Score:Q", format=".1f"),
+                    alt.Tooltip("Copertura_%:Q", format=".1f"),
+                    alt.Tooltip("Percentile_globale:Q", format=".1f"),
+                    alt.Tooltip("N_competenze:Q"),
                 ],
             )
             .properties(height=min(720, 28 * max(8, len(dim_over))))
