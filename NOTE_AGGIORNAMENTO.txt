@@ -28,3 +28,8 @@ Aggiornamento 2026-03-26 (Pizza Plot)
 - Aggiunto selettore a 3 viste: Competenze Trasversali / Competenze Specifiche / Competenze Trasversali e Specifiche.
 - Gli spicchi del Pizza Plot usano il verde applicativo (#1B7F5A).
 - Aggiornate le dipendenze dell'app con matplotlib e mplsoccer.
+
+
+Fix 2026-03-26
+- corretto il Pizza Plot per Streamlit Cloud: ora usa un asse polare compatibile con mplsoccer (PyPizza)
+- aggiunto fallback protetto: se il grafico non si inizializza, l'app non va in errore e resta disponibile la visualizzazione a barre

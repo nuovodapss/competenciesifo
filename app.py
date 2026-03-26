@@ -66,7 +66,9 @@ def _render_pizza_plot(labels: list[str], values: list[float], title: str):
     param_font = 12 if n <= 8 else 11 if n <= 12 else 10
     value_font = 11 if n <= 10 else 10
 
-    fig, ax = plt.subplots(figsize=(fig_size, fig_size), facecolor=soft_bg)
+    fig = plt.figure(figsize=(fig_size, fig_size), facecolor=soft_bg)
+    ax = fig.add_subplot(111, projection="polar")
+    fig.subplots_adjust(top=0.86, bottom=0.06, left=0.06, right=0.94)
     pizza = PyPizza(
         params=wrapped_labels,
         background_color=soft_bg,
@@ -81,21 +83,26 @@ def _render_pizza_plot(labels: list[str], values: list[float], title: str):
 
     slice_colors = [app_green] * n
 
-    pizza.make_pizza(
-        clean_values,
-        ax=ax,
-        color_blank_space="same",
-        slice_colors=slice_colors,
-        value_bck_colors=slice_colors,
-        blank_alpha=0.18,
-        kwargs_slices=dict(edgecolor="black", linewidth=0.9),
-        kwargs_params=dict(color="black", fontsize=param_font, va="center"),
-        kwargs_values=dict(
-            color="black",
-            fontsize=value_font,
-            bbox=dict(boxstyle="round,pad=0.24", facecolor="white", edgecolor="black", linewidth=0.9),
-        ),
-    )
+    try:
+        pizza.make_pizza(
+            clean_values,
+            ax=ax,
+            color_blank_space="same",
+            slice_colors=slice_colors,
+            value_bck_colors=slice_colors,
+            blank_alpha=0.18,
+            kwargs_slices=dict(edgecolor="black", linewidth=0.9),
+            kwargs_params=dict(color="black", fontsize=param_font, va="center"),
+            kwargs_values=dict(
+                color="black",
+                fontsize=value_font,
+                bbox=dict(boxstyle="round,pad=0.24", facecolor="white", edgecolor="black", linewidth=0.9),
+            ),
+        )
+    except Exception:
+        plt.close(fig)
+        st.info("Pizza Plot non disponibile per questo scope: controllo automatico passato alla visualizzazione a barre sotto.")
+        return
 
     fig.text(0.5, 0.965, title, ha="center", va="center", fontsize=18, fontweight="bold", color="black")
     fig.text(0.5, 0.932, "Score dimensioni 0–100", ha="center", va="center", fontsize=11, color="black")
