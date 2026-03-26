@@ -6,4 +6,3 @@ altair>=5.0
 numpy>=1.23
 plotly>=5.0
 matplotlib>=3.8
-mplsoccer>=1.2

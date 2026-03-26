@@ -33,3 +33,5 @@ Aggiornamento 2026-03-26 (Pizza Plot)
 Fix 2026-03-26 (pizza):
 - corretto asse Matplotlib del Pizza Plot: ora usa projection="polar" compatibile con PyPizza
 - aggiunto fallback: se PyPizza fallisce, l'app non va in crash e restano visibili barre e percentili
+
+- rimosso l'uso di mplsoccer/PyPizza: il Pizza Plot ora è disegnato con Matplotlib polar nativo, evitando l'errore ax.set_rorigin su Streamlit Cloud.
