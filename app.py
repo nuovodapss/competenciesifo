@@ -27,7 +27,7 @@ STRUCTURE_DIMENSIONS_PATH = APP_DIR / "config" / "structure_dimensions.yml"
 STYLE_PATH = APP_DIR / "assets" / "style.css"
 
 # ------------------------------------------------------------
-# Page config — coerente con app Direzione (APPGrade)
+# Page config
 # ------------------------------------------------------------
 st.set_page_config(
     page_title="APPGrade — Reparto",
@@ -37,73 +37,30 @@ st.set_page_config(
 )
 
 # ------------------------------------------------------------
-# Style helpers (rosso→verde + bordo nero) in stile dashboard
+# Style helpers
 # ------------------------------------------------------------
-COLOR_SCALE = alt.Scale(domain=[0, 100], range=["#d7191c", "#1a9641"])  # rosso→verde
+COLOR_SCALE = alt.Scale(domain=[0, 100], range=["#d7191c", "#1a9641"])
 BAR_BORDER = {"stroke": "black", "strokeWidth": 1}
+APP_GREEN = "#1B7F5A"
+APP_GREEN_LIGHT = "#EAF4EE"
+GRID_COLOR = "#AEB8B2"
+WHITE_BG = "#FFFFFF"
 
-
-def _wrap_pizza_label(text: str, width: int = 18) -> str:
-    txt = str(text).strip()
-    if not txt:
-        return txt
-    return "\n".join(textwrap.wrap(txt, width=width, break_long_words=False, break_on_hyphens=False))
-
-
-label_radius = 108  # puoi mettere 106-110
-
-for angle, label in zip(angles, dims_all):
-    deg = (np.degrees(angle)) % 360
-
-    # default: tangenziale
-    rotation = deg - 90
-    ha = "left"
-
-    # lato sinistro: ribalta per non avere testo capovolto
-    if 90 < deg < 270:
-        rotation += 180
-        ha = "right"
-
-    # ---- correzioni dedicate alla parte alta ----
-    # alto centro
-    if deg >= 345 or deg <= 15:
-        rotation = 0
-        ha = "center"
-
-    # alto-destra
-    elif 15 < deg < 75:
-        rotation = deg - 90
-        ha = "left"
-
-    # alto-sinistra
-    elif 285 < deg < 345:
-        rotation = deg - 270
-        ha = "right"
-
-    ax.text(
-        angle,
-        label_radius,
-        label,
-        rotation=rotation,
-        rotation_mode="anchor",
-        ha=ha,
-        va="center",
-        fontsize=11,
-        color="black",
-        clip_on=False,
-    )
 
 @st.cache_data(show_spinner=False)
 def _load_guide():
     return load_guide(GUIDE_PATH)
 
+
 @st.cache_data(show_spinner=False)
 def _load_column_order():
     return load_column_order(COLUMN_ORDER_PATH)
 
+
 @st.cache_data(show_spinner=False)
 def _load_structure_dimensions():
     return load_structure_dimensions(STRUCTURE_DIMENSIONS_PATH)
+
 
 @st.cache_data(show_spinner=False)
 def _read_css():
@@ -111,27 +68,179 @@ def _read_css():
         return STYLE_PATH.read_text(encoding="utf-8")
     return ""
 
+
+def _wrap_pizza_label(text: str, width: int = 18) -> str:
+    txt = str(text).strip()
+    if not txt:
+        return txt
+    return "\n".join(
+        textwrap.wrap(
+            txt,
+            width=width,
+            break_long_words=False,
+            break_on_hyphens=False,
+        )
+    )
+
+
+def _render_pizza_plot(labels: list[str], values: list[float], title: str | None = None):
+    if len(labels) < 2:
+        st.info("Pizza Plot non disponibile: servono almeno 2 dimensioni nello scope selezionato.")
+        return
+
+    n = len(labels)
+    wrapped_labels = [_wrap_pizza_label(lbl, width=18 if n <= 10 else 16) for lbl in labels]
+    clean_values = [max(0.0, min(100.0, float(v))) if pd.notna(v) else 0.0 for v in values]
+
+    fig_size = max(8.6, min(10.2, 5.2 + n * 0.16))
+    label_radius = 108.0
+    value_offset = 1.8
+    label_font = 17 if n <= 8 else 15 if n <= 10 else 13
+    value_font = 14 if n <= 10 else 12
+
+    try:
+        fig, ax = plt.subplots(
+            figsize=(fig_size, fig_size),
+            subplot_kw={"projection": "polar"},
+            facecolor=WHITE_BG,
+        )
+        ax.set_facecolor(WHITE_BG)
+
+        fig.subplots_adjust(top=0.96, bottom=0.08, left=0.08, right=0.92)
+
+        ax.set_theta_offset(np.pi / 2)
+        ax.set_theta_direction(-1)
+        ax.set_ylim(0, 112)
+        ax.spines["polar"].set_visible(False)
+        ax.xaxis.grid(False)
+        ax.yaxis.grid(True, color=GRID_COLOR, linestyle="--", linewidth=1.0, alpha=0.9)
+        ax.set_xticks([])
+        ax.set_yticks([20, 40, 60, 80, 100])
+        ax.set_yticklabels(["20", "40", "60", "80", "100"], fontsize=11, color="black")
+        ax.set_rlabel_position(90)
+
+        angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
+        width = 2 * np.pi / n
+
+        ax.bar(
+            angles,
+            [100] * n,
+            width=width,
+            bottom=0,
+            color=APP_GREEN_LIGHT,
+            edgecolor="black",
+            linewidth=1.3,
+            align="center",
+            zorder=1,
+            alpha=1.0,
+        )
+
+        ax.bar(
+            angles,
+            clean_values,
+            width=width,
+            bottom=0,
+            color=APP_GREEN,
+            edgecolor="black",
+            linewidth=1.3,
+            align="center",
+            zorder=3,
+            alpha=0.9,
+        )
+
+        # Etichette: uso il centro della fetta e una logica dedicata per l'arco alto
+        for angle, label in zip(angles, wrapped_labels):
+            center_angle = angle + width / 2
+            deg = float(np.degrees(center_angle) % 360)
+
+            rotation = deg - 90
+            ha = "left"
+
+            if 90 < deg < 270:
+                rotation += 180
+                ha = "right"
+
+            if deg >= 345 or deg <= 15:
+                rotation = 0
+                ha = "center"
+            elif 15 < deg < 75:
+                rotation = deg - 90
+                ha = "left"
+            elif 285 < deg < 345:
+                rotation = deg - 270
+                ha = "right"
+
+            ax.text(
+                center_angle,
+                label_radius,
+                label,
+                ha=ha,
+                va="center",
+                rotation=rotation,
+                rotation_mode="anchor",
+                fontsize=label_font,
+                color="black",
+                clip_on=False,
+                zorder=6,
+            )
+
+        for angle, val in zip(angles, clean_values):
+            value_angle = angle + width / 2
+            value_r = max(7.0, min(val + value_offset, 99.0))
+            ax.text(
+                value_angle,
+                value_r,
+                f"{int(round(val))}",
+                ha="center",
+                va="center",
+                fontsize=value_font,
+                color="white",
+                bbox=dict(
+                    boxstyle="round,pad=0.16",
+                    facecolor=APP_GREEN,
+                    edgecolor="black",
+                    linewidth=1.0,
+                ),
+                zorder=7,
+            )
+
+        centre = plt.Circle(
+            (0.5, 0.5),
+            0.022,
+            transform=ax.transAxes,
+            color="white",
+            ec="black",
+            lw=1.2,
+            zorder=8,
+        )
+        ax.add_artist(centre)
+
+        st.pyplot(fig, use_container_width=True)
+    except Exception:
+        st.info("Pizza Plot temporaneamente non disponibile. Restano visibili barre e percentili qui sotto.")
+    finally:
+        plt.close("all")
+
+
 guide = _load_guide()
 column_order = _load_column_order()
 structure_dim_map = _load_structure_dimensions()
 
-all_codes = column_order[4:]  # after ID, Nome, Cognome, Struttura
+all_codes = column_order[4:]
 
-# Trasversali: sempre inclusi e sempre modificabili
+# Trasversali: sempre incluse e sempre modificabili
 trans_df = guide.df[guide.df["Pannello"].astype(str).str.strip().str.lower() == "trasversali"].copy()
 TRANS_CODES = list(dict.fromkeys(trans_df["Codice"].astype(str).tolist()))
 TRANS_DIMENSIONS = trans_df["Dimensione"].astype(str).drop_duplicates().tolist()
 
-# Duplicati nel file guida: il codice rimane unico nello schema dati, ma lo segnaliamo
+# Codici duplicati nella guida
 duplicate_code_counts = guide.df["Codice"].astype(str).value_counts()
 DUPLICATE_CODES = duplicate_code_counts[duplicate_code_counts > 1].index.tolist()
 
-# CSS
 css = _read_css()
 if css:
     st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
-# Header
 st.title("Pannello di Competenze")
 st.markdown(
     "Carica il file del tuo reparto per **monitorare** le competenze e **modificare** i livelli degli Infermieri "
@@ -146,7 +255,6 @@ if uploaded is None:
     st.info("Carica il file di reparto in formato .xlsx per iniziare.")
     st.stop()
 
-# Hash upload to re-init session (evita residui in session_state)
 raw = uploaded.getvalue()
 file_hash = hashlib.md5(raw).hexdigest()
 
@@ -161,7 +269,6 @@ if st.session_state.get("file_hash") != file_hash:
 
 df_in = st.session_state["df_in_raw"].copy()
 
-# Validazione base
 missing_base = [c for c in ["ID", "Nome", "Cognome", "Struttura"] if c not in df_in.columns]
 if missing_base:
     st.error(
@@ -170,7 +277,6 @@ if missing_base:
     )
     st.stop()
 
-# Determina Struttura
 structures = detect_structure_values(df_in)
 if len(structures) == 0:
     structure = ""
@@ -183,11 +289,9 @@ else:
 
 st.session_state["selected_structure"] = structure
 
-# Dimensioni specifiche disponibili (tutte tranne Trasversali)
 all_dims = guide.df["Dimensione"].dropna().astype(str).str.strip().unique().tolist()
 spec_dims = [d for d in all_dims if d not in TRANS_DIMENSIONS]
 
-# Default dimensioni per Struttura
 mapped_dims_raw = []
 default_dims = []
 unavailable_mapped_dims = []
@@ -230,9 +334,6 @@ if DUPLICATE_CODES:
         f"({', '.join(DUPLICATE_CODES)}). Nell'app restano associati a una sola colonna Excel per codice."
     )
 
-# ------------------------------------------------------------
-# Inizializza df_work: schema uniforme + normalizzazione livelli
-# ------------------------------------------------------------
 if "df_work" not in st.session_state:
     df_work = df_in.copy()
     df_work = ensure_schema(df_work, column_order, fill_value="NA")
@@ -241,34 +342,24 @@ if "df_work" not in st.session_state:
 else:
     df_work = st.session_state["df_work"]
 
-# ------------------------------------------------------------
-# Scope (codici) visibili/modificabili per questa Struttura
-# ------------------------------------------------------------
 scope_df = guide.df[
     (guide.df["Codice"].astype(str).isin(TRANS_CODES))
     | (guide.df["Dimensione"].astype(str).isin(selected_dims))
 ].copy()
 
-# Mantieni l'ordine del file guida
 scope_df["Codice"] = scope_df["Codice"].astype(str)
 editable_codes = scope_df["Codice"].tolist()
 
-# ------------------------------------------------------------
-# Layout: due sezioni sulla stessa pagina
-# ------------------------------------------------------------
 tab_mon, tab_edit = st.tabs(["Monitoraggio", "Modifica & Download"])
 
 # ---------------- Monitoraggio ----------------
 with tab_mon:
-    # Precalcoli (numerico 0..5) sullo scope selezionato
     df_num = recode_df_to_num(df_work, editable_codes)
 
-    # Mapping Dimensione -> codici (ordine guida)
     codes_by_dim: dict[str, list[str]] = {}
     for dim, g in scope_df.groupby("Dimensione", sort=False):
         codes_by_dim[str(dim)] = g["Codice"].astype(str).tolist()
 
-    # ---------------- Vista Struttura ----------------
     st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.subheader("Livelli medi di Competenza del reparto")
     st.caption("Grafico a barre dei livelli medi per dimensioni di competenze trasversali e specifiche.")
@@ -301,11 +392,7 @@ with tab_mon:
             .mark_bar(**BAR_BORDER)
             .encode(
                 y=alt.Y("Dimensione:N", sort=dim_table["Dimensione"].tolist(), title=None),
-                x=alt.X(
-                    "Score_medio_%:Q",
-                    title="Score medio 0–100",
-                    scale=alt.Scale(domain=[0, 100]),
-                ),
+                x=alt.X("Score_medio_%:Q", title="Score medio 0–100", scale=alt.Scale(domain=[0, 100])),
                 color=alt.Color("Score_medio_%:Q", scale=COLOR_SCALE, legend=None),
                 tooltip=[
                     alt.Tooltip("Dimensione:N"),
@@ -320,22 +407,19 @@ with tab_mon:
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # ---------------- Vista per infermiere (Scout Report) ----------------
     st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.subheader("Profilo Infermiere")
     st.caption("Profilo del singolo Infermiere selezionato.")
 
-    # Selezione infermiere
-    df_id = df_work[["ID", "Nome", "Cognome", "Struttura"]].copy()
-    df_id = df_id.astype(str)
+    df_id = df_work[["ID", "Nome", "Cognome", "Struttura"]].copy().astype(str)
     df_id["label"] = (
-        df_id["Cognome"].astype(str)
+        df_id["Cognome"]
         + " "
-        + df_id["Nome"].astype(str)
+        + df_id["Nome"]
         + " ("
-        + df_id["Struttura"].astype(str)
+        + df_id["Struttura"]
         + ", ID:"
-        + df_id["ID"].astype(str)
+        + df_id["ID"]
         + ")"
     )
 
@@ -347,7 +431,6 @@ with tab_mon:
     target_id = df_id.loc[df_id["label"] == target_label, "ID"].iloc[0]
     target_id_str = str(target_id)
 
-    # -------------------- Toggle competenze in visualizzazione --------------------
     scope_mode = st.radio(
         "Competenze in visualizzazione",
         ["Competenze Trasversali", "Competenze Specifiche", "Competenze Trasversali e Specifiche"],
@@ -368,25 +451,19 @@ with tab_mon:
 
     scout_scope_df["Codice"] = scout_scope_df["Codice"].astype(str)
 
-    # Mapping Dimensione -> codici (ordine guida)
     codes_by_dim = {}
     for dim, g in scout_scope_df.groupby("Dimensione", sort=False):
         codes_by_dim[str(dim)] = g["Codice"].astype(str).tolist()
 
     dims_all = list(codes_by_dim.keys())
 
-    # Costruisco df dimensioni (0–100) per tutti, sullo scope selezionato
     df_dims = df_work[["ID", "Nome", "Cognome", "Struttura"]].copy().astype(str)
     for dim, codes in codes_by_dim.items():
         df_dims[dim] = df_num[codes].apply(score_percent, axis=1)
 
     row_dims = df_dims[df_dims["ID"].astype(str) == target_id_str].iloc[0]
 
-    # ------------------------------------------------------------
-    # 1) Profilo anagrafico & sintesi dimensioni (0–100)
-    # ------------------------------------------------------------
     st.markdown("### Profilo")
-
     c1, c2, c3 = st.columns([2, 2, 2])
 
     with c1:
@@ -398,7 +475,6 @@ with tab_mon:
 
     with c2:
         st.markdown("**Sintesi dimensioni (0–100)**")
-        dims_all = list(codes_by_dim.keys())
         vals = [float(row_dims[d]) for d in dims_all] if dims_all else []
         mean_v = float(np.mean(vals)) if vals else np.nan
         min_v = float(np.min(vals)) if vals else np.nan
@@ -407,34 +483,18 @@ with tab_mon:
         st.metric("Min", f"{min_v:.1f}" if np.isfinite(min_v) else "—")
         st.metric("Max", f"{max_v:.1f}" if np.isfinite(max_v) else "—")
 
-    # ------------------------------------------------------------
-    # 2) Pizza Plot sullo scope selezionato
-    # ------------------------------------------------------------
     st.markdown("### Pizza Plot")
-
     if dims_all:
         pizza_values = [float(row_dims[d]) for d in dims_all]
-        _render_pizza_plot(
-            dims_all,
-            pizza_values,
-            f"{scope_mode} — profilo dimensionale",
-        )
+        _render_pizza_plot(dims_all, pizza_values, f"{scope_mode} — profilo dimensionale")
     else:
         st.info("Pizza Plot non disponibile: nessuna dimensione nello scope selezionato.")
 
     st.markdown("---")
 
-    # ------------------------------------------------------------
-    # 3) Barre: profilo dimensioni (0–100) sullo scope selezionato
-    # ------------------------------------------------------------
     st.markdown("## Livelli di Competenza")
-
-    dims_all = list(codes_by_dim.keys())
     if dims_all:
-        dps_df = pd.DataFrame(
-            {"Dimensione": dims_all, "Score": [float(row_dims[d]) for d in dims_all]}
-        )
-
+        dps_df = pd.DataFrame({"Dimensione": dims_all, "Score": [float(row_dims[d]) for d in dims_all]})
         dps_chart = (
             alt.Chart(dps_df)
             .mark_bar(**BAR_BORDER)
@@ -452,11 +512,7 @@ with tab_mon:
 
     st.markdown("---")
 
-    # ------------------------------------------------------------
-    # 4) Percentili globali (rispetto ai colleghi del file caricato)
-    # ------------------------------------------------------------
     st.markdown("## Posizione rispetto ai percentili del reparto")
-
     rows_pct = []
     for dim in dims_all:
         global_scores = df_dims[dim].dropna().values
@@ -475,11 +531,7 @@ with tab_mon:
             .mark_bar(**BAR_BORDER)
             .encode(
                 y=alt.Y("Dimensione:N", sort=dims_all, title=None),
-                x=alt.X(
-                    "Percentile globale:Q",
-                    title="Percentile globale (%)",
-                    scale=alt.Scale(domain=[0, 100]),
-                ),
+                x=alt.X("Percentile globale:Q", title="Percentile globale (%)", scale=alt.Scale(domain=[0, 100])),
                 color=alt.Color("Percentile globale:Q", scale=COLOR_SCALE, legend=None),
                 tooltip=[alt.Tooltip("Dimensione:N"), alt.Tooltip("Percentile globale:Q", format=".1f")],
             )
@@ -491,12 +543,7 @@ with tab_mon:
 
     st.markdown("---")
 
-    # ------------------------------------------------------------
-    # 5) Competenze dettagliate (solo livello NA/N/Pav/C/A/E)
-    # ------------------------------------------------------------
     st.markdown("## Competenze dettagliate del profilo")
-
-    # Preparazione mapping (etichette/dimensioni) per lo scope selezionato
     _scope = scout_scope_df.copy()
     _scope["Codice"] = _scope["Codice"].astype(str)
 
@@ -507,19 +554,17 @@ with tab_mon:
     def _code_sort_key(code: str):
         d = code_to_dim.get(code, "")
         dpos = dim_pos.get(d, 999)
-        # root = parte non numerica finale, n = numero finale
         m = re.search(r"(\D+)(\d+)$", str(code))
         if m:
             root = m.group(1)
-            n = int(m.group(2))
+            n_code = int(m.group(2))
         else:
             root = re.sub(r"\d+$", "", str(code))
-            n = 9999
-        return (dpos, root, n, str(code))
+            n_code = 9999
+        return (dpos, root, n_code, str(code))
 
     sorted_codes = sorted(_scope["Codice"].astype(str).tolist(), key=_code_sort_key)
 
-    # Individua la riga dell'infermiere in df_work (per i livelli stringa)
     _target_idx = df_work.index[df_work["ID"].astype(str) == target_id_str].tolist()
     if not _target_idx:
         st.warning("Infermiere non trovato nel dataset.")
@@ -539,9 +584,7 @@ with tab_mon:
 
     comp_df = pd.DataFrame(rows_comp)
 
-    # -------------------- Visione d'insieme --------------------
     st.markdown("### Visione d'insieme")
-
     dim_rows = []
     for dim, codes in codes_by_dim.items():
         vals = df_num.loc[target_idx, codes]
@@ -588,11 +631,7 @@ with tab_mon:
         )
         st.altair_chart(over_chart, use_container_width=True)
 
-        show_dim_table = st.toggle(
-            "Mostra tabella riepilogo (dimensioni)",
-            value=False,
-            key="scout_show_dim_table",
-        )
+        show_dim_table = st.toggle("Mostra tabella riepilogo (dimensioni)", value=False, key="scout_show_dim_table")
         if show_dim_table:
             st.dataframe(
                 dim_over[["Dimensione", "Score", "Copertura_%", "Percentile_globale", "N_competenze"]],
@@ -600,9 +639,7 @@ with tab_mon:
                 use_container_width=True,
             )
 
-    # -------------------- Singole competenze: Expander --------------------
     st.markdown("### Singole competenze (per dimensione)")
-
     q = st.text_input("Cerca competenza", value="", key="scout_search_comp")
     view_comp = comp_df.copy()
     if q.strip():
@@ -612,7 +649,6 @@ with tab_mon:
     if view_comp.empty:
         st.info("Nessuna competenza trovata con il filtro.")
     else:
-        # mapping dimensione -> metriche (per titolo expander)
         _metrics = {}
         if not dim_over.empty:
             for _, r in dim_over.iterrows():
@@ -645,6 +681,7 @@ with tab_mon:
             )
 
     st.markdown("</div>", unsafe_allow_html=True)
+
 # ---------------- Modifica ----------------
 with tab_edit:
     st.markdown("<div class='card'>", unsafe_allow_html=True)
@@ -652,7 +689,6 @@ with tab_edit:
     st.caption("Seleziona un infermiere e modifica i livelli (NA, N, Pav, C, A, E). Premi **Salva** per applicare.")
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # nurse selector
     df_id = df_work[["ID", "Cognome", "Nome"]].astype(str)
     df_id["label"] = df_id["ID"] + " — " + df_id["Cognome"] + " " + df_id["Nome"]
     labels = df_id["label"].tolist()
@@ -664,7 +700,6 @@ with tab_edit:
     sel_label = st.selectbox("Seleziona infermiere", options=labels)
     idx = labels.index(sel_label)
 
-    # Editor dataframe: guida + livello corrente
     current_levels = []
     for code in editable_codes:
         current_levels.append(df_work.loc[idx, code] if code in df_work.columns else "NA")
@@ -672,16 +707,10 @@ with tab_edit:
     editor_df = scope_df.copy()
     editor_df["Livello"] = [normalize_level(x) for x in current_levels]
 
-    # Filtri
     f1, f2 = st.columns([1, 2])
     with f1:
         dim_options = list(editor_df["Dimensione"].unique())
-        dim_filter = st.multiselect(
-            "Filtra Dimensione",
-            options=dim_options,
-            default=dim_options,
-            key="dim_filter",
-        )
+        dim_filter = st.multiselect("Filtra Dimensione", options=dim_options, default=dim_options, key="dim_filter")
     with f2:
         query = st.text_input("Cerca (codice o testo competenza)", value="", key="search_query")
 
@@ -705,10 +734,9 @@ with tab_edit:
                 width="small",
             )
         },
-        key=f"editor_{df_work.loc[idx,'ID']}",
+        key=f"editor_{df_work.loc[idx, 'ID']}",
     )
 
-    # Applica edits subset al dataset completo del singolo infermiere
     merged = editor_df[["Dimensione", "Codice", "Competenza", "Livello"]].copy()
     merged["Codice"] = merged["Codice"].astype(str)
     merged["Livello"] = merged["Livello"].apply(normalize_level)
@@ -748,7 +776,6 @@ with tab_edit:
         st.session_state["df_work"] = df_work
         st.success("Modifiche salvate nel dataset di sessione.")
 
-    # ---------------- Download ----------------
     st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.subheader("Download dataset uniforme (.xlsx)")
     st.caption(
@@ -757,8 +784,6 @@ with tab_edit:
     )
 
     export_df = df_work.copy()
-
-    # Normalizza e forza NA fuori-scope
     editable_set = set(editable_codes)
     for c in all_codes:
         if c in export_df.columns:
@@ -766,11 +791,10 @@ with tab_edit:
             if c not in editable_set:
                 export_df[c] = "NA"
 
-    # Uniforma: solo schema canonico (base + tutte le competenze)
     export_df = export_df[column_order]
 
     xlsx_bytes = to_excel_bytes(export_df)
-    fname = f"competenze_{(structure or 'struttura').replace(' ','_')}.xlsx"
+    fname = f"competenze_{(structure or 'struttura').replace(' ', '_')}.xlsx"
     st.download_button(
         label="⬇️ Scarica Excel aggiornato",
         data=xlsx_bytes,
