@@ -2,15 +2,13 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-
 import re
 import textwrap
-import numpy as np
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 import altair as alt
-import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 
 from utils.export import to_excel_bytes
@@ -27,9 +25,6 @@ COLUMN_ORDER_PATH = APP_DIR / "config" / "column_order.json"
 STRUCTURE_DIMENSIONS_PATH = APP_DIR / "config" / "structure_dimensions.yml"
 STYLE_PATH = APP_DIR / "assets" / "style.css"
 
-# ------------------------------------------------------------
-# Page config
-# ------------------------------------------------------------
 st.set_page_config(
     page_title="APPGrade — Reparto",
     page_icon="",
@@ -37,15 +32,80 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ------------------------------------------------------------
-# Style helpers
-# ------------------------------------------------------------
 COLOR_SCALE = alt.Scale(domain=[0, 100], range=["#d7191c", "#1a9641"])
 BAR_BORDER = {"stroke": "black", "strokeWidth": 1}
-APP_GREEN = "#1B7F5A"
-APP_GREEN_LIGHT = "#EAF4EE"
-GRID_COLOR = "#AEB8B2"
-WHITE_BG = "#FFFFFF"
+
+
+def _wrap_pizza_label(text: str, width: int = 18) -> str:
+    txt = str(text).strip()
+    if not txt:
+        return txt
+    return "\n".join(textwrap.wrap(txt, width=width, break_long_words=False, break_on_hyphens=False))
+
+
+def _render_radar_plot(dims_all: list[str], radar_values: list[float], title: str | None = None) -> None:
+    if not dims_all:
+        st.info("Radar non disponibile: nessuna dimensione nello scope selezionato.")
+        return
+
+    clean_dims = [str(d) for d in dims_all]
+    clean_values = [float(v) if pd.notna(v) else 0.0 for v in radar_values]
+
+    dims_closed = clean_dims + [clean_dims[0]]
+    values_closed = clean_values + [clean_values[0]]
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatterpolar(
+            r=values_closed,
+            theta=dims_closed,
+            mode="lines+markers",
+            fill="toself",
+            fillcolor="rgba(27, 127, 90, 0.28)",
+            line=dict(color="#1B7F5A", width=3),
+            marker=dict(size=6, color="#1B7F5A"),
+            hovertemplate="%{theta}: %{r:.1f}<extra></extra>",
+        )
+    )
+
+    fig.update_layout(
+        showlegend=False,
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        margin=dict(l=10, r=10, t=10, b=10),
+        height=420,
+        width=420,
+        polar=dict(
+            bgcolor="white",
+            radialaxis=dict(
+                visible=True,
+                range=[0, 100],
+                tickmode="array",
+                tickvals=[20, 40, 60, 80, 100],
+                ticktext=["20", "40", "60", "80", "100"],
+                tickfont=dict(size=10, color="#444"),
+                gridcolor="#D9D9D9",
+                gridwidth=1,
+                linecolor="#BFBFBF",
+                linewidth=1,
+            ),
+            angularaxis=dict(
+                tickfont=dict(size=11, color="#111"),
+                gridcolor="#E6E6E6",
+                linecolor="#BFBFBF",
+                linewidth=1,
+                rotation=90,
+                direction="clockwise",
+            ),
+        ),
+    )
+
+    if title:
+        st.markdown(f"**{title}**")
+
+    left, mid, right = st.columns([1.4, 2, 1.4])
+    with mid:
+        st.plotly_chart(fig, use_container_width=False)
 
 
 @st.cache_data(show_spinner=False)
@@ -70,98 +130,16 @@ def _read_css():
     return ""
 
 
-def _wrap_pizza_label(text: str, width: int = 18) -> str:
-    txt = str(text).strip()
-    if not txt:
-        return txt
-    return "\n".join(
-        textwrap.wrap(
-            txt,
-            width=width,
-            break_long_words=False,
-            break_on_hyphens=False,
-        )
-    )
-
-
-def _render_radar_plot(labels: list[str], values: list[float], title: str | None = None):
-    if len(labels) < 2:
-        st.info("Radar non disponibile: servono almeno 2 dimensioni nello scope selezionato.")
-        return
-
-    n = len(labels)
-    wrap_w = 18 if n <= 8 else 16 if n <= 10 else 14
-    wrapped_labels = [_wrap_pizza_label(lbl, width=wrap_w) for lbl in labels]
-    clean_values = [max(0.0, min(100.0, float(v))) if pd.notna(v) else 0.0 for v in values]
-
-    theta = wrapped_labels + [wrapped_labels[0]]
-    r = clean_values + [clean_values[0]]
-
-    try:
-        fig = go.Figure()
-        fig.add_trace(
-            go.Scatterpolar(
-                r=r,
-                theta=theta,
-                mode="lines+markers",
-                fill="toself",
-                line=dict(color=APP_GREEN, width=3),
-                marker=dict(size=7, color=APP_GREEN),
-                fillcolor="rgba(27,127,90,0.28)",
-                hovertemplate="%{theta}<br>Score: %{r:.1f}<extra></extra>",
-                name="Profilo",
-            )
-        )
-
-        fig.update_layout(
-            showlegend=False,
-            paper_bgcolor="white",
-            plot_bgcolor="white",
-            margin=dict(l=40, r=40, t=20, b=20),
-            height=200 if n <= 8 else 760 if n <= 11 else 840,
-            polar=dict(
-                bgcolor="white",
-                radialaxis=dict(
-                    visible=True,
-                    range=[0, 100],
-                    tickmode="array",
-                    tickvals=[20, 40, 60, 80, 100],
-                    ticktext=["20", "40", "60", "80", "100"],
-                    tickfont=dict(size=12, color="#222222"),
-                    gridcolor="#D7DCD9",
-                    gridwidth=1,
-                    griddash="dot",
-                    linecolor="#222222",
-                    linewidth=1,
-                    angle=90,
-                ),
-                angularaxis=dict(
-                    direction="clockwise",
-                    rotation=90,
-                    gridcolor="#D7DCD9",
-                    linecolor="#222222",
-                    linewidth=1,
-                    tickfont=dict(size=15 if n <= 8 else 13 if n <= 10 else 12, color="#111111"),
-                ),
-            ),
-        )
-
-        st.plotly_chart(fig, use_container_width=False, config={"displayModeBar": False, "responsive": True})
-    except Exception:
-        st.info("Radar temporaneamente non disponibile. Restano visibili barre e percentili qui sotto.")
-
 guide = _load_guide()
 column_order = _load_column_order()
 structure_dim_map = _load_structure_dimensions()
 
 all_codes = column_order[4:]
 
-# Trasversali: sempre incluse e sempre modificabili
 trans_df = guide.df[guide.df["Pannello"].astype(str).str.strip().str.lower() == "trasversali"].copy()
 TRANS_CODES = list(dict.fromkeys(trans_df["Codice"].astype(str).tolist()))
 TRANS_DIMENSIONS = trans_df["Dimensione"].astype(str).drop_duplicates().tolist()
 
-# Codici duplicati nella guida
 duplicate_code_counts = guide.df["Codice"].astype(str).value_counts()
 DUPLICATE_CODES = duplicate_code_counts[duplicate_code_counts > 1].index.tolist()
 
@@ -280,7 +258,6 @@ editable_codes = scope_df["Codice"].tolist()
 
 tab_mon, tab_edit = st.tabs(["Monitoraggio", "Modifica & Download"])
 
-# ---------------- Monitoraggio ----------------
 with tab_mon:
     df_num = recode_df_to_num(df_work, editable_codes)
 
@@ -341,13 +318,13 @@ with tab_mon:
 
     df_id = df_work[["ID", "Nome", "Cognome", "Struttura"]].copy().astype(str)
     df_id["label"] = (
-        df_id["Cognome"]
+        df_id["Cognome"].astype(str)
         + " "
-        + df_id["Nome"]
+        + df_id["Nome"].astype(str)
         + " ("
-        + df_id["Struttura"]
+        + df_id["Struttura"].astype(str)
         + ", ID:"
-        + df_id["ID"]
+        + df_id["ID"].astype(str)
         + ")"
     )
 
@@ -363,7 +340,7 @@ with tab_mon:
         "Competenze in visualizzazione",
         ["Competenze Trasversali", "Competenze Specifiche", "Competenze Trasversali e Specifiche"],
         horizontal=True,
-        help="Influenza Radar, barre, percentili e dettaglio competenze.",
+        help="Influenza radar, barre, percentili e dettaglio competenze.",
         key="scout_scope_mode",
     )
 
@@ -384,15 +361,17 @@ with tab_mon:
         codes_by_dim[str(dim)] = g["Codice"].astype(str).tolist()
 
     dims_all = list(codes_by_dim.keys())
+    scout_codes = [c for codes in codes_by_dim.values() for c in codes]
+    df_num_scout = recode_df_to_num(df_work, scout_codes) if scout_codes else df_work.copy()
 
     df_dims = df_work[["ID", "Nome", "Cognome", "Struttura"]].copy().astype(str)
     for dim, codes in codes_by_dim.items():
-        df_dims[dim] = df_num[codes].apply(score_percent, axis=1)
+        df_dims[dim] = df_num_scout[codes].apply(score_percent, axis=1)
 
     row_dims = df_dims[df_dims["ID"].astype(str) == target_id_str].iloc[0]
 
     st.markdown("### Profilo")
-    c1, c2, c3 = st.columns([2, 2, 2])
+    c1, c2 = st.columns([2, 2])
 
     with c1:
         st.markdown("**Anagrafica**")
@@ -413,14 +392,14 @@ with tab_mon:
 
     st.markdown("### Radar")
     if dims_all:
-        pizza_values = [float(row_dims[d]) for d in dims_all]
-        _render_radar_plot(dims_all, pizza_values, f"{scope_mode} — profilo dimensionale")
+        radar_values = [float(row_dims[d]) for d in dims_all]
+        _render_radar_plot(dims_all, radar_values, None)
     else:
         st.info("Radar non disponibile: nessuna dimensione nello scope selezionato.")
 
     st.markdown("---")
-
     st.markdown("## Livelli di Competenza")
+
     if dims_all:
         dps_df = pd.DataFrame({"Dimensione": dims_all, "Score": [float(row_dims[d]) for d in dims_all]})
         dps_chart = (
@@ -439,20 +418,16 @@ with tab_mon:
         st.info("Nessuna dimensione da visualizzare per lo scope selezionato.")
 
     st.markdown("---")
-
     st.markdown("## Posizione rispetto ai percentili del reparto")
+
     rows_pct = []
     for dim in dims_all:
-        global_scores = df_dims[dim].dropna().values
+        global_scores = df_dims[dim].dropna().astype(float).values
         val = float(row_dims[dim])
-        if len(global_scores) > 0:
-            pct = (float(np.sum(global_scores <= val)) / float(len(global_scores))) * 100.0
-        else:
-            pct = np.nan
+        pct = (float(np.sum(global_scores <= val)) / float(len(global_scores))) * 100.0 if len(global_scores) > 0 else np.nan
         rows_pct.append({"Dimensione": dim, "Percentile globale": pct})
 
     pct_df = pd.DataFrame(rows_pct)
-
     if not pct_df.empty:
         pct_chart = (
             alt.Chart(pct_df)
@@ -470,8 +445,8 @@ with tab_mon:
         st.info("Impossibile calcolare i percentili globali.")
 
     st.markdown("---")
-
     st.markdown("## Competenze dettagliate del profilo")
+
     _scope = scout_scope_df.copy()
     _scope["Codice"] = _scope["Codice"].astype(str)
 
@@ -485,11 +460,11 @@ with tab_mon:
         m = re.search(r"(\D+)(\d+)$", str(code))
         if m:
             root = m.group(1)
-            n_code = int(m.group(2))
+            n = int(m.group(2))
         else:
             root = re.sub(r"\d+$", "", str(code))
-            n_code = 9999
-        return (dpos, root, n_code, str(code))
+            n = 9999
+        return (dpos, root, n, str(code))
 
     sorted_codes = sorted(_scope["Codice"].astype(str).tolist(), key=_code_sort_key)
 
@@ -502,28 +477,18 @@ with tab_mon:
     rows_comp = []
     for code in sorted_codes:
         level = normalize_level(df_work.loc[target_idx, code]) if code in df_work.columns else "NA"
-        rows_comp.append(
-            {
-                "Dimensione": code_to_dim.get(code, ""),
-                "Competenza": code_to_label.get(code, code),
-                "Livello": level,
-            }
-        )
+        rows_comp.append({"Dimensione": code_to_dim.get(code, ""), "Competenza": code_to_label.get(code, code), "Livello": level})
 
     comp_df = pd.DataFrame(rows_comp)
 
     st.markdown("### Visione d'insieme")
     dim_rows = []
     for dim, codes in codes_by_dim.items():
-        vals = df_num.loc[target_idx, codes]
+        vals = df_num_scout.loc[target_idx, codes]
         coverage = float((vals != 0).sum() / max(len(codes), 1) * 100)
         score = float(row_dims[dim]) if dim in row_dims else 0.0
-
         global_scores = df_dims[dim].dropna().astype(float).values if dim in df_dims.columns else np.array([])
-        if len(global_scores) > 0:
-            pct = (float(np.sum(global_scores <= score)) / float(len(global_scores))) * 100.0
-        else:
-            pct = np.nan
+        pct = (float(np.sum(global_scores <= score)) / float(len(global_scores))) * 100.0 if len(global_scores) > 0 else np.nan
 
         dim_rows.append(
             {
@@ -536,7 +501,6 @@ with tab_mon:
         )
 
     dim_over = pd.DataFrame(dim_rows)
-
     if dim_over.empty:
         st.info("Nessuna competenza disponibile nel profilo per lo scope selezionato.")
     else:
@@ -588,29 +552,17 @@ with tab_mon:
                 continue
 
             r = _metrics.get(dim, None)
-            if r is not None and pd.notna(r.get("Score", np.nan)):
-                title = f"{dim} — {float(r['Score']):.1f}/100 · Copertura {float(r['Copertura_%']):.0f}%"
-            else:
-                title = dim
+            title = f"{dim} — {float(r['Score']):.1f}/100 · Copertura {float(r['Copertura_%']):.0f}%" if r is not None and pd.notna(r.get("Score", np.nan)) else dim
 
             with st.expander(title, expanded=False):
                 st.dataframe(sub, hide_index=True, use_container_width=True)
 
-        show_list = st.toggle(
-            "Mostra lista completa (tutte le competenze filtrate)",
-            value=False,
-            key="scout_show_full_list",
-        )
+        show_list = st.toggle("Mostra lista completa (tutte le competenze filtrate)", value=False, key="scout_show_full_list")
         if show_list:
-            st.dataframe(
-                view_comp[["Dimensione", "Competenza", "Livello"]],
-                hide_index=True,
-                use_container_width=True,
-            )
+            st.dataframe(view_comp[["Dimensione", "Competenza", "Livello"]], hide_index=True, use_container_width=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ---------------- Modifica ----------------
 with tab_edit:
     st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.subheader("Modifica livelli per singolo infermiere")
@@ -628,9 +580,7 @@ with tab_edit:
     sel_label = st.selectbox("Seleziona infermiere", options=labels)
     idx = labels.index(sel_label)
 
-    current_levels = []
-    for code in editable_codes:
-        current_levels.append(df_work.loc[idx, code] if code in df_work.columns else "NA")
+    current_levels = [df_work.loc[idx, code] if code in df_work.columns else "NA" for code in editable_codes]
 
     editor_df = scope_df.copy()
     editor_df["Livello"] = [normalize_level(x) for x in current_levels]
@@ -655,14 +605,9 @@ with tab_edit:
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Livello": st.column_config.SelectboxColumn(
-                "Livello",
-                options=LEVELS,
-                required=True,
-                width="small",
-            )
+            "Livello": st.column_config.SelectboxColumn("Livello", options=LEVELS, required=True, width="small")
         },
-        key=f"editor_{df_work.loc[idx, 'ID']}",
+        key=f"editor_{df_work.loc[idx,'ID']}",
     )
 
     merged = editor_df[["Dimensione", "Codice", "Competenza", "Livello"]].copy()
@@ -722,7 +667,7 @@ with tab_edit:
     export_df = export_df[column_order]
 
     xlsx_bytes = to_excel_bytes(export_df)
-    fname = f"competenze_{(structure or 'struttura').replace(' ', '_')}.xlsx"
+    fname = f"competenze_{(structure or 'struttura').replace(' ','_')}.xlsx"
     st.download_button(
         label="⬇️ Scarica Excel aggiornato",
         data=xlsx_bytes,
