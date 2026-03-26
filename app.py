@@ -64,7 +64,7 @@ def _render_pizza_plot(labels: list[str], values: list[float], title: str):
     grid_color = "#AEB8B2"
 
     n = len(labels)
-    fig_size = max(3.6, min(4.8, 3.2 + n * 0.10))
+    fig_size = max(4.8, min(6.2, 2.2 + n * 0.12))
     label_font = 8.6 if n <= 10 else 8.1 if n <= 14 else 7.6
     value_font = 8.6 if n <= 12 else 8.0
 
@@ -119,7 +119,7 @@ def _render_pizza_plot(labels: list[str], values: list[float], title: str):
             rotation = np.degrees(np.arctan2(np.sin(angle), abs(np.cos(angle))))
             ax.text(
                 angle,
-                102.0,
+                110.0,
                 label,
                 ha="center",
                 va="center",
