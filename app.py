@@ -50,115 +50,48 @@ def _wrap_pizza_label(text: str, width: int = 18) -> str:
     return "\n".join(textwrap.wrap(txt, width=width, break_long_words=False, break_on_hyphens=False))
 
 
-def _render_pizza_plot(labels: list[str], values: list[float], title: str):
-    if len(labels) < 2:
-        st.info("Pizza Plot non disponibile: servono almeno 2 dimensioni nello scope selezionato.")
-        return
+label_radius = 108  # puoi mettere 106-110
 
-    wrapped_labels = [_wrap_pizza_label(lbl, width=14) for lbl in labels]
-    clean_values = [max(0.0, min(100.0, float(v))) if pd.notna(v) else 0.0 for v in values]
+for angle, label in zip(angles, dims_all):
+    deg = (np.degrees(angle)) % 360
 
-    app_green = "#1B7F5A"
-    pale_green = "#EAF4EE"
-    white_bg = "#FFFFFF"
-    grid_color = "#AEB8B2"
+    # default: tangenziale
+    rotation = deg - 90
+    ha = "left"
 
-    n = len(labels)
-    fig_size = max(3.6, min(4.8, 3.2 + n * 0.10))
-    label_font = 8.6 if n <= 10 else 8.1 if n <= 14 else 7.6
-    value_font = 8.6 if n <= 12 else 8.0
+    # lato sinistro: ribalta per non avere testo capovolto
+    if 90 < deg < 270:
+        rotation += 180
+        ha = "right"
 
-    try:
-        fig = plt.figure(figsize=(fig_size, fig_size), facecolor=white_bg)
-        ax = fig.add_subplot(111, projection="polar")
-        ax.set_facecolor(white_bg)
-        fig.subplots_adjust(top=0.90, bottom=0.16, left=0.16, right=0.84)
+    # ---- correzioni dedicate alla parte alta ----
+    # alto centro
+    if deg >= 345 or deg <= 15:
+        rotation = 0
+        ha = "center"
 
-        ax.set_theta_offset(np.pi / 2)
-        ax.set_theta_direction(-1)
-        ax.set_ylim(0, 104)
-        ax.spines["polar"].set_visible(False)
-        ax.xaxis.grid(False)
-        ax.yaxis.grid(True, color=grid_color, linestyle="--", linewidth=0.8, alpha=0.9)
-        ax.set_yticks([20, 40, 60, 80, 100])
-        ax.set_yticklabels(["20", "40", "60", "80", "100"], fontsize=8.6, color="black")
-        ax.set_rlabel_position(90)
-        ax.set_xticks([])
+    # alto-destra
+    elif 15 < deg < 75:
+        rotation = deg - 90
+        ha = "left"
 
-        angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
-        width = 2 * np.pi / n
+    # alto-sinistra
+    elif 285 < deg < 345:
+        rotation = deg - 270
+        ha = "right"
 
-        ax.bar(
-            angles,
-            [100] * n,
-            width=width,
-            bottom=0,
-            color=pale_green,
-            edgecolor="black",
-            linewidth=1.0,
-            align="center",
-            zorder=1,
-            alpha=1.0,
-        )
-
-        ax.bar(
-            angles,
-            clean_values,
-            width=width,
-            bottom=0,
-            color=app_green,
-            edgecolor="black",
-            linewidth=1.0,
-            align="center",
-            zorder=3,
-            alpha=0.93,
-        )
-
-        for angle, label in zip(angles, wrapped_labels):
-            angle_deg = np.degrees(angle)
-            rotation = np.degrees(np.arctan2(np.sin(angle), abs(np.cos(angle))))
-            ax.text(
-                angle,
-                102.0,
-                label,
-                ha="center",
-                va="center",
-                rotation=rotation,
-                rotation_mode="anchor",
-                fontsize=label_font,
-                color="black",
-                zorder=6,
-            )
-
-        for angle, val in zip(angles, clean_values):
-            value_r = max(7.0, min(val + 1.0, 97.0))
-            ax.text(
-                angle,
-                value_r,
-                f"{int(round(val))}",
-                ha="center",
-                va="center",
-                fontsize=value_font,
-                color="white",
-                bbox=dict(
-                    boxstyle="round,pad=0.16",
-                    facecolor=app_green,
-                    edgecolor="black",
-                    linewidth=0.9,
-                ),
-                zorder=7,
-            )
-
-        centre = plt.Circle((0.5, 0.5), 0.022, transform=ax.transAxes, color="white", ec="black", lw=1.0, zorder=8)
-        ax.add_artist(centre)
-
-        left, mid, right = st.columns([2.5, 1.4, 2.5])
-        with mid:
-            st.pyplot(fig, use_container_width=False)
-    except Exception:
-        st.info("Pizza Plot temporaneamente non disponibile. Restano visibili barre e percentili qui sotto.")
-    finally:
-        plt.close('all')
+    ax.text(
+        angle,
+        label_radius,
+        label,
+        rotation=rotation,
+        rotation_mode="anchor",
+        ha=ha,
+        va="center",
+        fontsize=11,
+        color="black",
+        clip_on=False,
+    )
 
 @st.cache_data(show_spinner=False)
 def _load_guide():
