@@ -68,7 +68,7 @@ def _render_pizza_plot(labels: list[str], values: list[float], title: str):
 
     fig = plt.figure(figsize=(fig_size, fig_size), facecolor=soft_bg)
     ax = fig.add_subplot(111, projection="polar")
-    fig.subplots_adjust(top=0.86, bottom=0.06, left=0.06, right=0.94)
+    ax.set_facecolor(soft_bg)
     pizza = PyPizza(
         params=wrapped_labels,
         background_color=soft_bg,
@@ -99,14 +99,14 @@ def _render_pizza_plot(labels: list[str], values: list[float], title: str):
                 bbox=dict(boxstyle="round,pad=0.24", facecolor="white", edgecolor="black", linewidth=0.9),
             ),
         )
+
+        fig.text(0.5, 0.965, title, ha="center", va="center", fontsize=18, fontweight="bold", color="black")
+        fig.text(0.5, 0.932, "Score dimensioni 0–100", ha="center", va="center", fontsize=11, color="black")
+        st.pyplot(fig, use_container_width=True)
     except Exception:
         plt.close(fig)
-        st.info("Pizza Plot non disponibile per questo scope: controllo automatico passato alla visualizzazione a barre sotto.")
+        st.info("Pizza Plot temporaneamente non disponibile. Restano visibili barre e percentili qui sotto.")
         return
-
-    fig.text(0.5, 0.965, title, ha="center", va="center", fontsize=18, fontweight="bold", color="black")
-    fig.text(0.5, 0.932, "Score dimensioni 0–100", ha="center", va="center", fontsize=11, color="black")
-    st.pyplot(fig, use_container_width=True)
     plt.close(fig)
 
 @st.cache_data(show_spinner=False)

@@ -30,6 +30,6 @@ Aggiornamento 2026-03-26 (Pizza Plot)
 - Aggiornate le dipendenze dell'app con matplotlib e mplsoccer.
 
 
-Fix 2026-03-26
-- corretto il Pizza Plot per Streamlit Cloud: ora usa un asse polare compatibile con mplsoccer (PyPizza)
-- aggiunto fallback protetto: se il grafico non si inizializza, l'app non va in errore e resta disponibile la visualizzazione a barre
+Fix 2026-03-26 (pizza):
+- corretto asse Matplotlib del Pizza Plot: ora usa projection="polar" compatibile con PyPizza
+- aggiunto fallback: se PyPizza fallisce, l'app non va in crash e restano visibili barre e percentili
