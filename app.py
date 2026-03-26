@@ -11,6 +11,7 @@ import pandas as pd
 import streamlit as st
 import altair as alt
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 from utils.export import to_excel_bytes
 from utils.guide import load_guide
@@ -83,144 +84,71 @@ def _wrap_pizza_label(text: str, width: int = 18) -> str:
     )
 
 
-def _render_pizza_plot(labels: list[str], values: list[float], title: str | None = None):
+def _render_radar_plot(labels: list[str], values: list[float], title: str | None = None):
     if len(labels) < 2:
-        st.info("Pizza Plot non disponibile: servono almeno 2 dimensioni nello scope selezionato.")
+        st.info("Radar non disponibile: servono almeno 2 dimensioni nello scope selezionato.")
         return
 
     n = len(labels)
-    wrapped_labels = [_wrap_pizza_label(lbl, width=18 if n <= 10 else 16) for lbl in labels]
+    wrap_w = 18 if n <= 8 else 16 if n <= 10 else 14
+    wrapped_labels = [_wrap_pizza_label(lbl, width=wrap_w) for lbl in labels]
     clean_values = [max(0.0, min(100.0, float(v))) if pd.notna(v) else 0.0 for v in values]
 
-    fig_size = max(8.6, min(10.2, 5.2 + n * 0.16))
-    label_radius = 108.0
-    value_offset = 1.8
-    label_font = 17 if n <= 8 else 15 if n <= 10 else 13
-    value_font = 14 if n <= 10 else 12
+    theta = wrapped_labels + [wrapped_labels[0]]
+    r = clean_values + [clean_values[0]]
 
     try:
-        fig, ax = plt.subplots(
-            figsize=(fig_size, fig_size),
-            subplot_kw={"projection": "polar"},
-            facecolor=WHITE_BG,
-        )
-        ax.set_facecolor(WHITE_BG)
-
-        fig.subplots_adjust(top=0.96, bottom=0.08, left=0.08, right=0.92)
-
-        ax.set_theta_offset(np.pi / 2)
-        ax.set_theta_direction(-1)
-        ax.set_ylim(0, 112)
-        ax.spines["polar"].set_visible(False)
-        ax.xaxis.grid(False)
-        ax.yaxis.grid(True, color=GRID_COLOR, linestyle="--", linewidth=1.0, alpha=0.9)
-        ax.set_xticks([])
-        ax.set_yticks([20, 40, 60, 80, 100])
-        ax.set_yticklabels(["20", "40", "60", "80", "100"], fontsize=11, color="black")
-        ax.set_rlabel_position(90)
-
-        angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
-        width = 2 * np.pi / n
-
-        ax.bar(
-            angles,
-            [100] * n,
-            width=width,
-            bottom=0,
-            color=APP_GREEN_LIGHT,
-            edgecolor="black",
-            linewidth=1.3,
-            align="center",
-            zorder=1,
-            alpha=1.0,
-        )
-
-        ax.bar(
-            angles,
-            clean_values,
-            width=width,
-            bottom=0,
-            color=APP_GREEN,
-            edgecolor="black",
-            linewidth=1.3,
-            align="center",
-            zorder=3,
-            alpha=0.9,
-        )
-
-        # Etichette: uso il centro della fetta e una logica dedicata per l'arco alto
-        for angle, label in zip(angles, wrapped_labels):
-            center_angle = angle + width / 2
-            deg = float(np.degrees(center_angle) % 360)
-
-            rotation = deg - 90
-            ha = "left"
-
-            if 90 < deg < 270:
-                rotation += 180
-                ha = "right"
-
-            if deg >= 345 or deg <= 15:
-                rotation = 0
-                ha = "center"
-            elif 15 < deg < 75:
-                rotation = deg - 90
-                ha = "left"
-            elif 285 < deg < 345:
-                rotation = deg - 270
-                ha = "right"
-
-            ax.text(
-                center_angle,
-                label_radius,
-                label,
-                ha=ha,
-                va="center",
-                rotation=rotation,
-                rotation_mode="anchor",
-                fontsize=label_font,
-                color="black",
-                clip_on=False,
-                zorder=6,
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatterpolar(
+                r=r,
+                theta=theta,
+                mode="lines+markers",
+                fill="toself",
+                line=dict(color=APP_GREEN, width=3),
+                marker=dict(size=7, color=APP_GREEN),
+                fillcolor="rgba(27,127,90,0.28)",
+                hovertemplate="%{theta}<br>Score: %{r:.1f}<extra></extra>",
+                name="Profilo",
             )
+        )
 
-        for angle, val in zip(angles, clean_values):
-            value_angle = angle + width / 2
-            value_r = max(7.0, min(val + value_offset, 99.0))
-            ax.text(
-                value_angle,
-                value_r,
-                f"{int(round(val))}",
-                ha="center",
-                va="center",
-                fontsize=value_font,
-                color="white",
-                bbox=dict(
-                    boxstyle="round,pad=0.16",
-                    facecolor=APP_GREEN,
-                    edgecolor="black",
-                    linewidth=1.0,
+        fig.update_layout(
+            showlegend=False,
+            paper_bgcolor="white",
+            plot_bgcolor="white",
+            margin=dict(l=40, r=40, t=20, b=20),
+            height=680 if n <= 8 else 760 if n <= 11 else 840,
+            polar=dict(
+                bgcolor="white",
+                radialaxis=dict(
+                    visible=True,
+                    range=[0, 100],
+                    tickmode="array",
+                    tickvals=[20, 40, 60, 80, 100],
+                    ticktext=["20", "40", "60", "80", "100"],
+                    tickfont=dict(size=12, color="#222222"),
+                    gridcolor="#D7DCD9",
+                    gridwidth=1,
+                    griddash="dot",
+                    linecolor="#222222",
+                    linewidth=1,
+                    angle=90,
                 ),
-                zorder=7,
-            )
-
-        centre = plt.Circle(
-            (0.5, 0.5),
-            0.022,
-            transform=ax.transAxes,
-            color="white",
-            ec="black",
-            lw=1.2,
-            zorder=8,
+                angularaxis=dict(
+                    direction="clockwise",
+                    rotation=90,
+                    gridcolor="#D7DCD9",
+                    linecolor="#222222",
+                    linewidth=1,
+                    tickfont=dict(size=15 if n <= 8 else 13 if n <= 10 else 12, color="#111111"),
+                ),
+            ),
         )
-        ax.add_artist(centre)
 
-        st.pyplot(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
     except Exception:
-        st.info("Pizza Plot temporaneamente non disponibile. Restano visibili barre e percentili qui sotto.")
-    finally:
-        plt.close("all")
-
+        st.info("Radar temporaneamente non disponibile. Restano visibili barre e percentili qui sotto.")
 
 guide = _load_guide()
 column_order = _load_column_order()
@@ -435,7 +363,7 @@ with tab_mon:
         "Competenze in visualizzazione",
         ["Competenze Trasversali", "Competenze Specifiche", "Competenze Trasversali e Specifiche"],
         horizontal=True,
-        help="Influenza Pizza Plot, barre, percentili e dettaglio competenze.",
+        help="Influenza Radar, barre, percentili e dettaglio competenze.",
         key="scout_scope_mode",
     )
 
@@ -483,12 +411,12 @@ with tab_mon:
         st.metric("Min", f"{min_v:.1f}" if np.isfinite(min_v) else "—")
         st.metric("Max", f"{max_v:.1f}" if np.isfinite(max_v) else "—")
 
-    st.markdown("### Pizza Plot")
+    st.markdown("### Radar")
     if dims_all:
         pizza_values = [float(row_dims[d]) for d in dims_all]
-        _render_pizza_plot(dims_all, pizza_values, f"{scope_mode} — profilo dimensionale")
+        _render_radar_plot(dims_all, pizza_values, f"{scope_mode} — profilo dimensionale")
     else:
-        st.info("Pizza Plot non disponibile: nessuna dimensione nello scope selezionato.")
+        st.info("Radar non disponibile: nessuna dimensione nello scope selezionato.")
 
     st.markdown("---")
 
