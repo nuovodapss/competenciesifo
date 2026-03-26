@@ -146,7 +146,7 @@ def _render_radar_plot(labels: list[str], values: list[float], title: str | None
             ),
         )
 
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "responsive": True})
+        st.plotly_chart(fig, use_container_width=False, config={"displayModeBar": False, "responsive": True})
     except Exception:
         st.info("Radar temporaneamente non disponibile. Restano visibili barre e percentili qui sotto.")
 
