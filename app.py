@@ -377,7 +377,7 @@ def _render_dimension_grid(
     file_key: str,
     df_work: pd.DataFrame,
 ) -> None:
-    """Renderizza le famiglie in righe da 3, mantenendo l'ordine visivo sinistra→destra."""
+    """Renderizza una famiglia per riga a tutta larghezza, con layout stabile."""
     if not dimensions:
         return
 
@@ -386,16 +386,13 @@ def _render_dimension_grid(
         unsafe_allow_html=True,
     )
 
-    ordered_dimensions = [str(d) for d in dimensions]
-    for row_start in range(0, len(ordered_dimensions), 3):
-        row_dims = ordered_dimensions[row_start: row_start + 3]
-        row_columns = st.columns(3)
-        for col_idx, dimension in enumerate(row_dims):
-            subset = source_df[source_df["Dimensione"].astype(str).eq(dimension)].copy()
-            if subset.empty:
-                continue
-            with row_columns[col_idx]:
-                _render_dimension_card(dimension, subset, selected_row, file_key, df_work)
+    # Layout volutamente verticale e stabile: una famiglia per riga a tutta larghezza.
+    # Evita differenze di altezza, colonne sfalsate e card compresse.
+    for dimension in [str(d) for d in dimensions]:
+        subset = source_df[source_df["Dimensione"].astype(str).eq(dimension)].copy()
+        if subset.empty:
+            continue
+        _render_dimension_card(dimension, subset, selected_row, file_key, df_work)
 
 
 

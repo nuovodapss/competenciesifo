@@ -365,3 +365,83 @@ div[data-testid="stSelectbox"] label, div[data-testid="stMultiSelect"] label { c
   background: #e8f6ee !important;
   color: #24724a !important;
 }
+
+
+/* V10 — layout competenze verticale, stabile e a tutta larghezza */
+.dapss-fm-section-title {
+  margin-top: 28px !important;
+  margin-bottom: 12px !important;
+}
+
+[data-testid="stVerticalBlockBorderWrapper"] {
+  width: 100% !important;
+  margin: 0 0 14px 0 !important;
+  border: 1px solid var(--dapss-border) !important;
+  border-radius: 16px !important;
+  overflow: hidden !important;
+  background: #ffffff !important;
+  box-shadow: 0 5px 18px rgba(23,49,38,.04) !important;
+}
+
+/* L'intestazione verde arriva fino ai bordi della card, come nell'app di riferimento. */
+[data-testid="stVerticalBlockBorderWrapper"] .dapss-fm-family-header {
+  min-height: 50px !important;
+  margin: -1rem -1rem .2rem -1rem !important;
+  padding: 10px 14px !important;
+  border-radius: 0 !important;
+}
+
+[data-testid="stVerticalBlockBorderWrapper"] .dapss-fm-family-header h4 {
+  font-size: 1.12rem !important;
+}
+
+/* Riga competenza più leggibile su tutta la larghezza. */
+[data-testid="stVerticalBlockBorderWrapper"] .dapss-fm-code {
+  padding-top: 7px !important;
+  font-size: .68rem !important;
+}
+
+[data-testid="stVerticalBlockBorderWrapper"] .dapss-fm-competency {
+  min-height: 36px !important;
+  display: flex !important;
+  align-items: center !important;
+  padding: 4px 0 !important;
+  font-size: .78rem !important;
+  line-height: 1.22 !important;
+}
+
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"]:last-child .stButton > button {
+  min-width: 72px !important;
+  min-height: 34px !important;
+  height: 34px !important;
+  margin-top: 2px !important;
+  border-radius: 8px !important;
+}
+
+/* Pannello dettaglio competenza separato dalla griglia. */
+.dapss-download-card {
+  background: #ffffff;
+  border: 1px solid var(--dapss-border);
+  border-radius: 15px;
+  padding: 16px 17px;
+  box-shadow: 0 5px 18px rgba(23,49,38,.04);
+  margin: 8px 0 10px;
+}
+.dapss-download-title {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: .66rem;
+  color: var(--dapss-green-dark);
+  font-weight: 600;
+  letter-spacing: .06em;
+}
+.dapss-download-name {
+  font-family: "Barlow Condensed", sans-serif;
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin-top: 6px;
+}
+.dapss-download-copy {
+  color: var(--dapss-muted);
+  font-size: .78rem;
+  margin-top: 5px;
+}
