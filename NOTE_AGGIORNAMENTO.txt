@@ -1,21 +1,20 @@
-Aggiornamento applicativo - fix Pizza Plot stabile
+Aggiornamento applicativo — Modifica e Download
 
 Modifiche principali
-- Guida competenze aggiornata con il file definitivo.
-- Mappatura Struttura -> Dimensioni aggiornata dal file Mappatura Reparto-Area.
-- Codici duplicati PER1/PER2/PER3 corretti in PRC1/PRC2/PRC3 per Gestione Sale Operatorie ad Alta Complessita.
-- Sostituito il Radar con un Pizza Plot.
-- Aggiunte 3 viste nel profilo infermiere:
-  - Competenze Trasversali
-  - Competenze Specifiche
-  - Competenze Trasversali e Specifiche
+- Rimossa completamente la sezione Monitoraggio.
+- Mantenuto il caricamento del file Excel di reparto.
+- Nuova schermata di modifica a schede, coerente con la grafica dell'Applicativo Competenze.
+- Competenze organizzate per pannello e dimensione in tre colonne responsive.
+- Livello modificabile direttamente su ogni riga.
+- Score dimensionale live su scala 0/25/50/75/100 (NA escluso dal calcolo).
+- Download immediato del file aggiornato con ordine colonne canonico.
+- Ricerca per codice, titolo o descrizione.
 
-Fix tecnico importante
-- Rimosso completamente mplsoccer / PyPizza.
-- Il Pizza Plot e ora disegnato con Matplotlib polar nativo.
-- requirements.txt non richiede piu mplsoccer.
+Descrizioni delle competenze
+- Aggiunto caricamento automatico dei file Excel/CSV presenti in 00_GOVERNANCE.
+- Matching prioritario per codice e fallback per titolo della competenza.
+- Supporto a più file, sottocartelle e più fogli Excel.
+- Possibilità di indicare una cartella esterna tramite GOVERNANCE_DIR.
 
-Perche questo fix risolve l'errore visto su Streamlit Cloud
-- Il traceback precedente chiamava pizza.make_pizza(...) e py_pizza.py.
-- In questa versione app.py non contiene piu alcun richiamo a PyPizza.
-- Se dopo il deploy compare ancora lo stesso traceback con pizza.make_pizza, Streamlit Cloud sta ancora eseguendo una versione vecchia del repo.
+Nota
+I file sorgente di 00_GOVERNANCE non erano inclusi nel pacchetto ricevuto. Il codice è predisposto per caricarli automaticamente quando vengono aggiunti alla cartella.

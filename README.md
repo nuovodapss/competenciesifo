@@ -1,39 +1,47 @@
-# APPGrade — Applicativo Competenze (Streamlit · Reparto)
+# APPGrade — Modifica e Download
 
-Web-app Streamlit per:
-1) **Monitoraggio** delle competenze (per Struttura/Reparto)
-2) **Modifica** dei livelli di competenza per singolo professionista, con calcolo immediato dei punteggi per **Dimensione**
-3) **Download** del dataset in `.xlsx` con **struttura/ordine colonne uniforme** per l'accorpamento centrale
+Applicazione Streamlit semplificata per i coordinatori.
 
-## Come funziona
-- Il Coordinatore carica il **dataset di reparto** (xlsx).
-- L'app legge la colonna `Struttura` e applica la mappa **Struttura → Dimensioni** (oltre alle Trasversali).
-- Tab **Monitoraggio**: indicatori aggregati per Dimensione e ranking infermieri (score 0–100).
-- Tab **Modifica & Download**: selezione infermiere, modifica livelli (`NA`, `N`, `Pav`, `C`, `A`, `E`), visualizzazione score per Dimensione (live), download del dataset aggiornato.
+## Flusso operativo
 
-## Struttura del repository
-- `app.py` : app Streamlit (single-page con 2 tab)
-- `data/guida_competenze.xlsx` : **File Definitivo (Guida Competenze)** (mappa Dimensione ↔ Codici)
-- `config/column_order.json` : ordine colonne canonico (base + Trasversali nell’ordine richiesto + tutte le altre competenze)
-- `config/structure_dimensions.yml` : mappa `Struttura -> Dimensioni` (personalizzabile)
-- `assets/style.css` : CSS minimale (sostituibile con lo stile dell'app Direzione)
+1. Caricamento del file Excel di reparto scaricato dal Drive.
+2. Selezione del professionista.
+3. Modifica dei livelli direttamente nelle schede grafiche delle competenze.
+4. Download del file Excel aggiornato.
 
-## Avvio in locale
+La sezione di monitoraggio è stata rimossa. Le modifiche vengono conservate nella sessione dell'app e applicate automaticamente al file scaricato.
+
+## Interfaccia
+
+Le competenze sono organizzate in schede per dimensione, con:
+
+- codice;
+- titolo della competenza;
+- descrizione della singola competenza;
+- livello modificabile (`—`, `N`, `PAV`, `C`, `A`, `E`);
+- punteggio della dimensione su 100.
+
+## Descrizioni da `00_GOVERNANCE`
+
+L'app ricerca automaticamente file `.xlsx`, `.xlsm`, `.xls` e `.csv` in:
+
+- `00_GOVERNANCE/`
+- `data/00_GOVERNANCE/`
+- percorso indicato dalla variabile d'ambiente `GOVERNANCE_DIR`
+
+Il matching avviene per codice della competenza o, come fallback, per titolo della competenza. Il caricatore tollera intestazioni differenti, ad esempio `Descrizione competenza`, `Definizione`, `Descrittore` o `Comportamenti attesi`.
+
+## Avvio
+
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## Deploy su Streamlit Community Cloud (via GitHub)
-1. Crea un repository GitHub e carica questi file.
-2. Su Streamlit Community Cloud collega il repository e imposta:
-   - **Main file path**: `app.py`
-   - **Python requirements**: `requirements.txt`
+## File principali
 
-## Personalizzazione mappa Struttura->Dimensioni
-Modifica `config/structure_dimensions.yml`.
-- Se una Struttura non è presente, l'app mostra comunque le **Trasversali** e puoi selezionare manualmente le Dimensioni specifiche via UI.
-
-## Nota sul download uniforme
-- Il file scaricato contiene **tutti** i codici della guida in ordine canonico.
-- I codici **non visibili** nella Struttura (fuori dallo scope) vengono impostati a `NA`.
+- `app.py`: interfaccia semplificata Modifica + Download
+- `data/guida_competenze.xlsx`: guida codici/dimensioni
+- `00_GOVERNANCE/`: fonti delle descrizioni
+- `config/structure_dimensions.yml`: mappa Struttura → Dimensioni
+- `config/column_order.json`: ordine canonico delle colonne nel download

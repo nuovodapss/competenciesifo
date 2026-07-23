@@ -1,48 +1,234 @@
-/* Minimal green accent style (replace with your original 'Applicativo Competenze' CSS if available) */
-:root{
-  --accent:#1b7f5a;
-  --accent-2:#0f5f43;
-  --bg-soft:#f5faf7;
-  --card:#ffffff;
-  --text:#0b1a12;
-  --muted:#5b6b63;
-  --border:rgba(28, 59, 44, 0.12);
+:root {
+  --ifo-green-950: #12382c;
+  --ifo-green-900: #173d31;
+  --ifo-green-700: #087d4e;
+  --ifo-green-200: #bfe6d3;
+  --ifo-green-100: #e7f6ee;
+  --ifo-green-50: #f5fbf8;
+  --ifo-text: #17352b;
+  --ifo-muted: #63736d;
+  --ifo-line: #dce8e2;
+  --ifo-page: #fbfdfc;
 }
 
-.app-title{
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--text);
-  margin-bottom: 0.2rem;
-}
-.app-subtitle{
-  color: var(--muted);
-  margin-top: 0;
-  margin-bottom: 0.6rem;
+html, body, [class*="css"] {
+  color: var(--ifo-text);
 }
 
-.card{
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 1rem 1.1rem;
-  box-shadow: 0 1px 10px rgba(0,0,0,0.03);
-  margin-bottom: 0.8rem;
+.stApp {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(21, 91, 62, 0.035), transparent 30rem),
+    var(--ifo-page);
 }
 
-.pill{
-  display: inline-block;
-  padding: 0.1rem 0.55rem;
-  border-radius: 999px;
-  font-size: 0.85rem;
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  color: var(--accent-2);
-  margin-right: 0.35rem;
-  margin-bottom: 0.25rem;
+.block-container {
+  max-width: 1720px;
+  padding-top: 1.3rem;
+  padding-bottom: 3rem;
 }
 
-.hint{
-  color: var(--muted);
+[data-testid="stSidebar"] {
+  background: #f4f9f6;
+  border-right: 1px solid var(--ifo-line);
+}
+
+[data-testid="stSidebar"] .block-container {
+  padding-top: 1.4rem;
+}
+
+.sidebar-brand {
+  color: var(--ifo-green-950);
+  font-size: 1.55rem;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+
+.file-chip,
+.structure-label {
+  border: 1px solid #cfe2d8;
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.86rem;
+  overflow-wrap: anywhere;
+}
+
+.structure-label {
+  margin-top: 0.35rem;
+  color: var(--ifo-green-900);
+  font-weight: 700;
+}
+
+.page-kicker {
+  color: var(--ifo-green-700);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  margin-bottom: 0.15rem;
+}
+
+.person-heading {
+  color: var(--ifo-green-950);
+  font-size: clamp(1.55rem, 2vw, 2.25rem);
+  line-height: 1.05;
+  font-weight: 900;
+  letter-spacing: -0.035em;
+}
+
+.person-subheading {
+  color: var(--ifo-muted);
   font-size: 0.95rem;
+  margin-top: 0.35rem;
+  margin-bottom: 1.25rem;
+}
+
+.section-heading {
+  color: var(--ifo-green-950);
+  font-family: "Arial Narrow", "Roboto Condensed", Arial, sans-serif;
+  font-size: clamp(1.45rem, 1.7vw, 2rem);
+  font-weight: 900;
+  letter-spacing: -0.035em;
+  text-transform: none;
+  margin-top: 0.25rem;
+}
+
+.section-rule {
+  height: 2px;
+  background: #138451;
+  width: 100%;
+  margin: 0.45rem 0 1.9rem;
+}
+
+/* Schede dimensione: il bordo è prodotto da st.container(border=True). */
+[data-testid="stVerticalBlockBorderWrapper"] {
+  border-color: #d4e3dc !important;
+  border-radius: 15px !important;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(20, 62, 46, 0.055);
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+
+[data-testid="stVerticalBlockBorderWrapper"] > div {
+  padding: 0.78rem 0.78rem 0.6rem !important;
+}
+
+.dimension-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin: -0.78rem -0.78rem 0.25rem;
+  padding: 0.72rem 0.82rem;
+  background: var(--ifo-green-950);
+  color: #ffffff;
+}
+
+.dimension-card-title {
+  font-family: "Arial Narrow", "Roboto Condensed", Arial, sans-serif;
+  font-size: 1.03rem;
+  line-height: 1.1;
+  font-weight: 900;
+  letter-spacing: -0.018em;
+}
+
+.dimension-card-score {
+  flex: 0 0 auto;
+  font-size: 1rem;
+  line-height: 1;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.dimension-card-score span {
+  margin-left: 0.08rem;
+  font-size: 0.63rem;
+  opacity: 0.92;
+}
+
+.competence-code {
+  color: #087f4f;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.73rem;
+  font-weight: 900;
+  padding-top: 0.43rem;
+}
+
+.competence-title {
+  color: #18372d;
+  font-size: 0.84rem;
+  line-height: 1.16;
+  font-weight: 550;
+  padding-top: 0.32rem;
+}
+
+.competence-description {
+  color: #6a7973;
+  font-size: 0.71rem;
+  line-height: 1.25;
+  margin-top: 0.22rem;
+  padding-bottom: 0.1rem;
+}
+
+.competence-divider {
+  height: 1px;
+  background: #e6eeea;
+  margin: 0.18rem 0 0.18rem;
+}
+
+/* Select dei livelli in forma compatta, simile ai badge dello screenshot. */
+div[data-testid="stSelectbox"] {
+  margin-top: 0.06rem;
+}
+
+div[data-testid="stSelectbox"] > div > div {
+  min-height: 2rem;
+}
+
+div[data-testid="stSelectbox"] [data-baseweb="select"] > div {
+  min-height: 2rem;
+  border: 1px solid #b9dfca;
+  border-radius: 8px;
+  background: var(--ifo-green-100);
+  color: #087346;
+  font-size: 0.72rem;
+  font-weight: 850;
+  padding-left: 0.48rem;
+}
+
+div[data-testid="stSelectbox"] svg {
+  color: #087346;
+}
+
+.stDownloadButton > button[kind="primary"] {
+  border-radius: 10px;
+  font-weight: 800;
+  min-height: 2.65rem;
+}
+
+.empty-spacer {
+  height: 6vh;
+}
+
+.upload-title {
+  color: var(--ifo-green-950);
+  font-size: 1.35rem;
+  font-weight: 900;
+  letter-spacing: -0.025em;
+  margin-bottom: 0.45rem;
+}
+
+/* Riduce la distanza verticale generata dai blocchi interni alle righe. */
+[data-testid="stHorizontalBlock"] {
+  gap: 0.55rem;
+}
+
+@media (max-width: 1100px) {
+  .block-container {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  .competence-title {
+    font-size: 0.8rem;
+  }
 }

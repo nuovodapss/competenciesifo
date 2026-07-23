@@ -1,21 +1,20 @@
 from __future__ import annotations
 
 import hashlib
+import html
+import os
 from pathlib import Path
 import re
-import textwrap
 
-import numpy as np
 import pandas as pd
 import streamlit as st
-import altair as alt
-import plotly.graph_objects as go
 
 from utils.export import to_excel_bytes
+from utils.governance import load_governance_descriptions
 from utils.guide import load_guide
 from utils.io import detect_structure_values, normalize_competence_columns, read_department_excel
-from utils.panels import load_structure_dimensions, guess_dimensions_from_structure
-from utils.recode import LEVELS, recode_df_to_num, recode_series_to_num, score_percent, normalize_level
+from utils.panels import guess_dimensions_from_structure, load_structure_dimensions
+from utils.recode import LEVELS, display_level, normalize_level, score_levels
 from utils.schema import coerce_base_columns, ensure_schema, load_column_order
 
 
@@ -26,655 +25,426 @@ STRUCTURE_DIMENSIONS_PATH = APP_DIR / "config" / "structure_dimensions.yml"
 STYLE_PATH = APP_DIR / "assets" / "style.css"
 
 st.set_page_config(
-    page_title="APPGrade — Reparto",
+    page_title="APPGrade — Modifica competenze",
     page_icon="",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-COLOR_SCALE = alt.Scale(domain=[0, 100], range=["#d7191c", "#1a9641"])
-BAR_BORDER = {"stroke": "black", "strokeWidth": 1}
 
+@st.cache_data(show_spinner=False)
+def _load_guide_df() -> pd.DataFrame:
+    guide_df = load_guide(GUIDE_PATH).df.copy()
 
-def _wrap_pizza_label(text: str, width: int = 18) -> str:
-    txt = str(text).strip()
-    if not txt:
-        return txt
-    return "\n".join(textwrap.wrap(txt, width=width, break_long_words=False, break_on_hyphens=False))
+    governance_dirs: list[Path] = [
+        APP_DIR / "00_GOVERNANCE",
+        APP_DIR / "data" / "00_GOVERNANCE",
+    ]
+    configured_dir = os.getenv("GOVERNANCE_DIR", "").strip()
+    if configured_dir:
+        governance_dirs.insert(0, Path(configured_dir))
 
-
-def _render_radar_plot(dims_all: list[str], radar_values: list[float], title: str | None = None) -> None:
-    if not dims_all:
-        st.info("Radar non disponibile: nessuna dimensione nello scope selezionato.")
-        return
-
-    clean_dims = [str(d) for d in dims_all]
-    clean_values = [float(v) if pd.notna(v) else 0.0 for v in radar_values]
-
-    dims_closed = clean_dims + [clean_dims[0]]
-    values_closed = clean_values + [clean_values[0]]
-
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatterpolar(
-            r=values_closed,
-            theta=dims_closed,
-            mode="lines+markers",
-            fill="toself",
-            fillcolor="rgba(27, 127, 90, 0.28)",
-            line=dict(color="#1B7F5A", width=3),
-            marker=dict(size=6, color="#1B7F5A"),
-            hovertemplate="%{theta}: %{r:.1f}<extra></extra>",
-        )
+    descriptions, sources = load_governance_descriptions(governance_dirs, guide_df)
+    guide_df["Descrizione"] = guide_df.apply(
+        lambda row: descriptions.get(str(row["Codice"]), str(row.get("Descrizione", "")).strip()),
+        axis=1,
     )
-
-    fig.update_layout(
-        showlegend=False,
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        margin=dict(l=60, r=60, t=40, b=40),
-        height=520,
-        width=520,
-        polar=dict(
-            bgcolor="white",
-            radialaxis=dict(
-                visible=True,
-                range=[0, 100],
-                tickmode="array",
-                tickvals=[20, 40, 60, 80, 100],
-                ticktext=["20", "40", "60", "80", "100"],
-                tickfont=dict(size=10, color="#444"),
-                gridcolor="#D9D9D9",
-                gridwidth=1,
-                linecolor="#BFBFBF",
-                linewidth=1,
-            ),
-            angularaxis=dict(
-                tickfont=dict(size=9, color="#111"),
-                gridcolor="#E6E6E6",
-                linecolor="#BFBFBF",
-                linewidth=1,
-                rotation=90,
-                direction="clockwise",
-            ),
-        ),
-    )
-
-    if title:
-        st.markdown(f"**{title}**")
-
-    left, mid, right = st.columns([1.4, 2, 1.4])
-    with mid:
-        st.plotly_chart(fig, use_container_width=False)
+    guide_df.attrs["description_sources"] = sources
+    return guide_df
 
 
 @st.cache_data(show_spinner=False)
-def _load_guide():
-    return load_guide(GUIDE_PATH)
-
-
-@st.cache_data(show_spinner=False)
-def _load_column_order():
+def _load_column_order() -> list[str]:
     return load_column_order(COLUMN_ORDER_PATH)
 
 
 @st.cache_data(show_spinner=False)
-def _load_structure_dimensions():
+def _load_structure_dimensions() -> dict[str, list[str]]:
     return load_structure_dimensions(STRUCTURE_DIMENSIONS_PATH)
 
 
 @st.cache_data(show_spinner=False)
-def _read_css():
-    if STYLE_PATH.exists():
-        return STYLE_PATH.read_text(encoding="utf-8")
-    return ""
+def _read_css() -> str:
+    return STYLE_PATH.read_text(encoding="utf-8") if STYLE_PATH.exists() else ""
 
 
-guide = _load_guide()
-column_order = _load_column_order()
-structure_dim_map = _load_structure_dimensions()
+def _slug(value: object) -> str:
+    return re.sub(r"[^a-zA-Z0-9_-]+", "_", str(value)).strip("_") or "item"
 
-all_codes = column_order[4:]
 
-trans_df = guide.df[guide.df["Pannello"].astype(str).str.strip().str.lower() == "trasversali"].copy()
-TRANS_CODES = list(dict.fromkeys(trans_df["Codice"].astype(str).tolist()))
-TRANS_DIMENSIONS = trans_df["Dimensione"].astype(str).drop_duplicates().tolist()
+def _row_token(row_index: object, row: pd.Series) -> str:
+    raw = f"{row_index}|{row.get('ID', '')}|{row.get('Cognome', '')}|{row.get('Nome', '')}"
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()[:12]
 
-duplicate_code_counts = guide.df["Codice"].astype(str).value_counts()
-DUPLICATE_CODES = duplicate_code_counts[duplicate_code_counts > 1].index.tolist()
+
+def _level_key(file_hash: str, row_token: str, code: str) -> str:
+    return f"level_{file_hash}_{row_token}_{_slug(code)}"
+
+
+def _score_for_codes(df: pd.DataFrame, row_index: object, codes: list[str]) -> int:
+    existing = [code for code in codes if code in df.columns]
+    if not existing:
+        return 0
+    return int(round(score_levels(df.loc[row_index, existing])))
+
+
+def _estimate_card_weight(group: pd.DataFrame) -> float:
+    weight = 1.8
+    for _, row in group.iterrows():
+        weight += 1.0
+        description = str(row.get("Descrizione", "")).strip()
+        if description:
+            weight += min(2.0, max(0.4, len(description) / 150))
+    return weight
+
+
+def _apply_widget_values(
+    df: pd.DataFrame,
+    row_index: object,
+    file_hash: str,
+    row_token: str,
+    codes: list[str],
+) -> None:
+    for code in codes:
+        key = _level_key(file_hash, row_token, code)
+        if key in st.session_state and code in df.columns:
+            df.at[row_index, code] = normalize_level(st.session_state[key])
+
+
+def _render_dimension_card(
+    dimension: str,
+    dimension_df: pd.DataFrame,
+    full_dimension_df: pd.DataFrame,
+    df_work: pd.DataFrame,
+    selected_index: object,
+    file_hash: str,
+    row_token: str,
+) -> None:
+    full_codes = full_dimension_df["Codice"].astype(str).tolist()
+    dimension_score = _score_for_codes(df_work, selected_index, full_codes)
+
+    with st.container(border=True):
+        st.markdown(
+            "<div class='dimension-card-header'>"
+            f"<div class='dimension-card-title'>{html.escape(str(dimension))}</div>"
+            f"<div class='dimension-card-score'>{dimension_score}<span>/100</span></div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+        for position, (_, competence) in enumerate(dimension_df.iterrows()):
+            code = str(competence["Codice"])
+            title = str(competence["Competenza"])
+            description = str(competence.get("Descrizione", "")).strip()
+
+            code_col, text_col, level_col = st.columns([0.9, 5.6, 1.15])
+            with code_col:
+                st.markdown(f"<div class='competence-code'>{html.escape(code)}</div>", unsafe_allow_html=True)
+            with text_col:
+                description_html = ""
+                if description and description.casefold() != title.casefold():
+                    description_html = (
+                        f"<div class='competence-description'>{html.escape(description)}</div>"
+                    )
+                st.markdown(
+                    f"<div class='competence-title'>{html.escape(title)}</div>{description_html}",
+                    unsafe_allow_html=True,
+                )
+            with level_col:
+                current_level = normalize_level(df_work.at[selected_index, code])
+                key = _level_key(file_hash, row_token, code)
+                selected_level = st.selectbox(
+                    f"Livello {code}",
+                    options=LEVELS,
+                    index=LEVELS.index(current_level),
+                    format_func=display_level,
+                    key=key,
+                    label_visibility="collapsed",
+                )
+                df_work.at[selected_index, code] = normalize_level(selected_level)
+
+            if position < len(dimension_df) - 1:
+                st.markdown("<div class='competence-divider'></div>", unsafe_allow_html=True)
+
+
+def _render_panel(
+    panel_title: str,
+    panel_df: pd.DataFrame,
+    full_panel_df: pd.DataFrame,
+    df_work: pd.DataFrame,
+    selected_index: object,
+    file_hash: str,
+    row_token: str,
+) -> None:
+    if panel_df.empty:
+        return
+
+    st.markdown(
+        f"<div class='section-heading'>{html.escape(panel_title)}</div><div class='section-rule'></div>",
+        unsafe_allow_html=True,
+    )
+
+    visible_groups = [(str(dim), group.copy()) for dim, group in panel_df.groupby("Dimensione", sort=False)]
+    full_groups = {str(dim): group.copy() for dim, group in full_panel_df.groupby("Dimensione", sort=False)}
+
+    assignments: list[list[tuple[str, pd.DataFrame]]] = [[], [], []]
+    weights = [0.0, 0.0, 0.0]
+    for dimension, group in visible_groups:
+        target = min(range(3), key=lambda index: weights[index])
+        assignments[target].append((dimension, group))
+        weights[target] += _estimate_card_weight(group)
+
+    columns = st.columns(3)
+    for column, cards in zip(columns, assignments):
+        with column:
+            for dimension, group in cards:
+                _render_dimension_card(
+                    dimension=dimension,
+                    dimension_df=group,
+                    full_dimension_df=full_groups.get(dimension, group),
+                    df_work=df_work,
+                    selected_index=selected_index,
+                    file_hash=file_hash,
+                    row_token=row_token,
+                )
+
 
 css = _read_css()
 if css:
     st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
-st.title("Pannello di Competenze")
-st.markdown(
-    "Carica il file del tuo reparto per **monitorare** le competenze e **modificare** i livelli degli Infermieri "
-    "con download finale in file excel **.xlsx**."
+guide_df = _load_guide_df()
+column_order = _load_column_order()
+structure_dim_map = _load_structure_dimensions()
+all_codes = column_order[4:]
+
+transversal_mask = guide_df["Pannello"].astype(str).str.strip().str.casefold() == "trasversali"
+transversal_df = guide_df[transversal_mask].copy()
+transversal_codes = transversal_df["Codice"].astype(str).tolist()
+transversal_dimensions = transversal_df["Dimensione"].astype(str).drop_duplicates().tolist()
+all_dimensions = guide_df["Dimensione"].astype(str).drop_duplicates().tolist()
+specific_dimensions = [dimension for dimension in all_dimensions if dimension not in transversal_dimensions]
+
+duplicate_codes = (
+    guide_df["Codice"].astype(str).value_counts().loc[lambda counts: counts > 1].index.tolist()
 )
 
 with st.sidebar:
-    st.markdown("### 1) Carica file")
-    uploaded = st.file_uploader("File Excel (.xlsx)", type=["xlsx"], accept_multiple_files=False)
+    st.markdown("<div class='sidebar-brand'>APPGrade</div>", unsafe_allow_html=True)
+    st.caption("Modifica e download delle competenze")
+    uploaded = st.file_uploader("File del reparto (.xlsx)", type=["xlsx"], accept_multiple_files=False)
 
 if uploaded is None:
-    st.info("Carica il file di reparto in formato .xlsx per iniziare.")
+    st.markdown("<div class='empty-spacer'></div>", unsafe_allow_html=True)
+    left, centre, right = st.columns([1, 1.5, 1])
+    with centre:
+        with st.container(border=True):
+            st.markdown("<div class='upload-title'>Carica il file del reparto</div>", unsafe_allow_html=True)
+            st.write(
+                "Seleziona il file Excel scaricato dal Drive. Dopo il caricamento potrai modificare "
+                "i livelli direttamente nelle schede e scaricare il file aggiornato."
+            )
+            st.info("Il file viene elaborato nella sessione corrente e non viene salvato dall'applicazione.")
     st.stop()
 
 raw = uploaded.getvalue()
 file_hash = hashlib.md5(raw).hexdigest()
 
 if st.session_state.get("file_hash") != file_hash:
-    df_in = read_department_excel(uploaded)
-    df_in = coerce_base_columns(df_in)
-    st.session_state["df_in_raw"] = df_in
+    try:
+        df_input = read_department_excel(uploaded)
+        df_input = coerce_base_columns(df_input)
+    except Exception as exc:
+        st.error(f"Impossibile leggere il file Excel: {exc}")
+        st.stop()
+
+    missing_base = [column for column in ["ID", "Nome", "Cognome", "Struttura"] if column not in df_input.columns]
+    if missing_base:
+        st.error(
+            "Il file non contiene tutte le colonne richieste: "
+            + ", ".join(missing_base)
+            + "."
+        )
+        st.stop()
+
+    df_work = ensure_schema(df_input, column_order, fill_value="NA")
+    df_work = normalize_competence_columns(df_work, all_codes)
+
     st.session_state["file_hash"] = file_hash
-    st.session_state.pop("df_work", None)
+    st.session_state["df_work"] = df_work
+    st.session_state["uploaded_filename"] = uploaded.name
     st.session_state.pop("selected_structure", None)
-    st.session_state.pop("selected_dimensions", None)
 
-df_in = st.session_state["df_in_raw"].copy()
 
-missing_base = [c for c in ["ID", "Nome", "Cognome", "Struttura"] if c not in df_in.columns]
-if missing_base:
-    st.error(
-        "Il dataset caricato non contiene tutte le colonne minime richieste: "
-        f"{missing_base}.\n\nColonne trovate: {list(df_in.columns)}"
-    )
-    st.stop()
-
-structures = detect_structure_values(df_in)
-if len(structures) == 0:
-    structure = ""
-    st.warning("Colonna 'Struttura' vuota/non compilata: verranno mostrate solo le Trasversali.")
-elif len(structures) == 1:
-    structure = structures[0]
-else:
-    st.warning("Nel file ci sono più valori diversi in 'Struttura'. Scegline uno per applicare la mappa Dimensioni.")
-    structure = st.selectbox("Seleziona Struttura", structures)
-
-st.session_state["selected_structure"] = structure
-
-all_dims = guide.df["Dimensione"].dropna().astype(str).str.strip().unique().tolist()
-spec_dims = [d for d in all_dims if d not in TRANS_DIMENSIONS]
-
-mapped_dims_raw = []
-default_dims = []
-unavailable_mapped_dims = []
-if structure and structure in structure_dim_map:
-    mapped_dims_raw = structure_dim_map.get(structure, [])
-    default_dims = [d for d in mapped_dims_raw if d in spec_dims]
-    unavailable_mapped_dims = [d for d in mapped_dims_raw if d not in spec_dims]
-elif structure:
-    default_dims = guess_dimensions_from_structure(structure, spec_dims)
-else:
-    default_dims = []
+df_work = st.session_state["df_work"]
+structures = detect_structure_values(df_work)
 
 with st.sidebar:
     st.markdown("---")
-    st.markdown("### 2) Dimensioni di competenza")
-    st.markdown(f"<div class='pill'>Struttura: {structure or '—'}</div>", unsafe_allow_html=True)
-
-    selected_dims = st.multiselect(
-        "Competenze Specifiche",
-        options=spec_dims,
-        default=st.session_state.get("selected_dimensions", default_dims),
-        help="Le Trasversali sono sempre incluse. Qui selezioni le Dimensioni specifiche del reparto.",
+    st.markdown("#### File in lavorazione")
+    st.markdown(
+        f"<div class='file-chip'>{html.escape(st.session_state.get('uploaded_filename', uploaded.name))}</div>",
+        unsafe_allow_html=True,
     )
-    st.session_state["selected_dimensions"] = selected_dims
 
-    if structure and structure not in structure_dim_map:
-        st.info("Struttura non presente nella mappa: scegli manualmente le Dimensioni specifiche da includere.")
-    elif unavailable_mapped_dims:
-        st.info(
-            "Alcune dimensioni presenti nella mappa della struttura non sono disponibili nella guida competenze aggiornata: "
-            + ", ".join(unavailable_mapped_dims)
+    if not structures:
+        structure = ""
+        st.warning("La colonna Struttura è vuota: vengono mostrate le sole competenze trasversali.")
+    elif len(structures) == 1:
+        structure = structures[0]
+        st.markdown(f"<div class='structure-label'>{html.escape(structure)}</div>", unsafe_allow_html=True)
+    else:
+        structure = st.selectbox(
+            "Struttura",
+            options=structures,
+            index=structures.index(st.session_state.get("selected_structure", structures[0]))
+            if st.session_state.get("selected_structure", structures[0]) in structures
+            else 0,
         )
+    st.session_state["selected_structure"] = structure
+
+mapped_dimensions = []
+if structure:
+    mapped_dimensions = [
+        dimension for dimension in structure_dim_map.get(structure, []) if dimension in specific_dimensions
+    ]
+    if not mapped_dimensions:
+        mapped_dimensions = guess_dimensions_from_structure(structure, specific_dimensions)
+
+with st.sidebar:
+    if structure and not mapped_dimensions:
+        with st.expander("Ambito competenze specifiche", expanded=True):
+            selected_specific_dimensions = st.multiselect(
+                "Dimensioni",
+                options=specific_dimensions,
+                default=[],
+                help="La struttura non è presente nella mappa: seleziona le dimensioni specifiche da mostrare.",
+            )
+    else:
+        selected_specific_dimensions = mapped_dimensions
 
     st.markdown("---")
-    st.caption("")
-
-if DUPLICATE_CODES:
-    st.warning(
-        "Nel file guida ci sono codici duplicati "
-        f"({', '.join(DUPLICATE_CODES)}). Nell'app restano associati a una sola colonna Excel per codice."
+    identity_df = df_work[["ID", "Cognome", "Nome"]].copy().astype(str)
+    identity_df["row_index"] = df_work.index
+    identity_df["label"] = (
+        identity_df["Cognome"].str.strip()
+        + " "
+        + identity_df["Nome"].str.strip()
+        + " · ID "
+        + identity_df["ID"].str.strip()
+    )
+    duplicate_labels = identity_df["label"].duplicated(keep=False)
+    identity_df.loc[duplicate_labels, "label"] = (
+        identity_df.loc[duplicate_labels, "label"]
+        + " · riga "
+        + (identity_df.loc[duplicate_labels].index + 2).astype(str)
     )
 
-if "df_work" not in st.session_state:
-    df_work = df_in.copy()
-    df_work = ensure_schema(df_work, column_order, fill_value="NA")
-    df_work = normalize_competence_columns(df_work, all_codes)
-    st.session_state["df_work"] = df_work
-else:
-    df_work = st.session_state["df_work"]
+    if identity_df.empty:
+        st.error("Il file non contiene professionisti da modificare.")
+        st.stop()
 
-scope_df = guide.df[
-    (guide.df["Codice"].astype(str).isin(TRANS_CODES))
-    | (guide.df["Dimensione"].astype(str).isin(selected_dims))
+    selected_label = st.selectbox("Professionista", identity_df["label"].tolist())
+    selected_index = identity_df.loc[identity_df["label"] == selected_label, "row_index"].iloc[0]
+    selected_row = df_work.loc[selected_index]
+    row_token = _row_token(selected_index, selected_row)
+
+    view_mode = st.radio(
+        "Visualizza",
+        ["Trasversali", "Specifiche", "Tutte"],
+        horizontal=True,
+    )
+    search_query = st.text_input("Cerca competenza", placeholder="Codice o testo")
+
+scope_df = guide_df[
+    guide_df["Codice"].astype(str).isin(transversal_codes)
+    | guide_df["Dimensione"].astype(str).isin(selected_specific_dimensions)
 ].copy()
 
-scope_df["Codice"] = scope_df["Codice"].astype(str)
-editable_codes = scope_df["Codice"].tolist()
+# Una sola colonna Excel può rappresentare un codice. In caso di duplicati si
+# mantiene la prima definizione, coerentemente con il dataset di reparto.
+scope_df = scope_df.drop_duplicates(subset=["Codice"], keep="first").copy()
+editable_codes = scope_df["Codice"].astype(str).tolist()
 
-tab_mon, tab_edit = st.tabs(["Monitoraggio", "Modifica & Download"])
+_apply_widget_values(df_work, selected_index, file_hash, row_token, editable_codes)
+st.session_state["df_work"] = df_work
 
-with tab_mon:
-    df_num = recode_df_to_num(df_work, editable_codes)
+if view_mode == "Trasversali":
+    visible_scope = scope_df[scope_df["Codice"].astype(str).isin(transversal_codes)].copy()
+elif view_mode == "Specifiche":
+    visible_scope = scope_df[~scope_df["Codice"].astype(str).isin(transversal_codes)].copy()
+else:
+    visible_scope = scope_df.copy()
 
-    codes_by_dim: dict[str, list[str]] = {}
-    for dim, g in scope_df.groupby("Dimensione", sort=False):
-        codes_by_dim[str(dim)] = g["Codice"].astype(str).tolist()
+if search_query.strip():
+    query = search_query.strip().casefold()
+    visible_scope = visible_scope[
+        visible_scope["Codice"].astype(str).str.casefold().str.contains(query, regex=False)
+        | visible_scope["Competenza"].astype(str).str.casefold().str.contains(query, regex=False)
+        | visible_scope["Descrizione"].astype(str).str.casefold().str.contains(query, regex=False)
+    ].copy()
 
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.subheader("Livelli medi di Competenza del reparto")
-    st.caption("Grafico a barre dei livelli medi per dimensioni di competenze trasversali e specifiche.")
+export_df = df_work.copy()
+editable_set = set(editable_codes)
+for code in all_codes:
+    if code in export_df.columns:
+        export_df[code] = export_df[code].apply(normalize_level)
+        if code not in editable_set:
+            export_df[code] = "NA"
+export_df = export_df[column_order]
 
-    rows = []
-    for dim, codes in codes_by_dim.items():
-        per = []
-        coverage = []
-        for _, r in df_num.iterrows():
-            vals = r[codes]
-            per.append(score_percent(vals))
-            non_na = int((vals != 0).sum())
-            coverage.append(float(non_na / max(len(codes), 1) * 100))
-        rows.append(
-            {
-                "Dimensione": dim,
-                "N_competenze": len(codes),
-                "Score_medio_%": round(float(pd.Series(per).mean()), 1) if len(per) else 0.0,
-                "Copertura_media_%": round(float(pd.Series(coverage).mean()), 1) if len(coverage) else 0.0,
-            }
-        )
+original_name = Path(st.session_state.get("uploaded_filename", uploaded.name)).stem
+output_name = f"{original_name}_aggiornato.xlsx"
+xlsx_bytes = to_excel_bytes(export_df)
 
-    dim_table = pd.DataFrame(rows).sort_values("Score_medio_%", ascending=False)
-
-    if dim_table.empty:
-        st.info("Nessuna dimensione disponibile nel scope selezionato.")
-    else:
-        chart = (
-            alt.Chart(dim_table)
-            .mark_bar(**BAR_BORDER)
-            .encode(
-                y=alt.Y("Dimensione:N", sort=dim_table["Dimensione"].tolist(), title=None),
-                x=alt.X("Score_medio_%:Q", title="Score medio 0–100", scale=alt.Scale(domain=[0, 100])),
-                color=alt.Color("Score_medio_%:Q", scale=COLOR_SCALE, legend=None),
-                tooltip=[
-                    alt.Tooltip("Dimensione:N"),
-                    alt.Tooltip("Score_medio_%:Q", format=".1f"),
-                    alt.Tooltip("Copertura_media_%:Q", format=".1f"),
-                    alt.Tooltip("N_competenze:Q"),
-                ],
-            )
-            .properties(height=min(720, 28 * max(8, len(dim_table))))
-        )
-        st.altair_chart(chart, use_container_width=True)
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.subheader("Profilo Infermiere")
-    st.caption("Profilo del singolo Infermiere selezionato.")
-
-    df_id = df_work[["ID", "Nome", "Cognome", "Struttura"]].copy().astype(str)
-    df_id["label"] = (
-        df_id["Cognome"].astype(str)
-        + " "
-        + df_id["Nome"].astype(str)
-        + " ("
-        + df_id["Struttura"].astype(str)
-        + ", ID:"
-        + df_id["ID"].astype(str)
-        + ")"
-    )
-
-    if df_id.empty:
-        st.warning("Nessun infermiere presente nel file.")
-        st.stop()
-
-    target_label = st.selectbox("Seleziona infermiere", sorted(df_id["label"].tolist()), key="scout_target")
-    target_id = df_id.loc[df_id["label"] == target_label, "ID"].iloc[0]
-    target_id_str = str(target_id)
-
-    scope_mode = st.radio(
-        "Competenze in visualizzazione",
-        ["Competenze Trasversali", "Competenze Specifiche", "Competenze Trasversali e Specifiche"],
-        horizontal=True,
-        help="Influenza radar, barre, percentili e dettaglio competenze.",
-        key="scout_scope_mode",
-    )
-
-    if scope_mode == "Competenze Trasversali":
-        scout_scope_df = guide.df[guide.df["Codice"].astype(str).isin(TRANS_CODES)].copy()
-    elif scope_mode == "Competenze Specifiche":
-        scout_scope_df = guide.df[
-            (~guide.df["Codice"].astype(str).isin(TRANS_CODES))
-            & (guide.df["Dimensione"].astype(str).isin(selected_dims))
-        ].copy()
-    else:
-        scout_scope_df = scope_df.copy()
-
-    scout_scope_df["Codice"] = scout_scope_df["Codice"].astype(str)
-
-    codes_by_dim = {}
-    for dim, g in scout_scope_df.groupby("Dimensione", sort=False):
-        codes_by_dim[str(dim)] = g["Codice"].astype(str).tolist()
-
-    dims_all = list(codes_by_dim.keys())
-    scout_codes = [c for codes in codes_by_dim.values() for c in codes]
-    df_num_scout = recode_df_to_num(df_work, scout_codes) if scout_codes else df_work.copy()
-
-    df_dims = df_work[["ID", "Nome", "Cognome", "Struttura"]].copy().astype(str)
-    for dim, codes in codes_by_dim.items():
-        df_dims[dim] = df_num_scout[codes].apply(score_percent, axis=1)
-
-    row_dims = df_dims[df_dims["ID"].astype(str) == target_id_str].iloc[0]
-
-    st.markdown("### Profilo")
-    c1, c2 = st.columns([2, 2])
-
-    with c1:
-        st.markdown("**Anagrafica**")
-        st.write(f"- **ID**: {row_dims['ID']}")
-        st.write(f"- **Nome**: {row_dims['Nome']}")
-        st.write(f"- **Cognome**: {row_dims['Cognome']}")
-        st.write(f"- **Struttura**: {row_dims['Struttura']}")
-
-    with c2:
-        st.markdown("**Sintesi dimensioni (0–100)**")
-        vals = [float(row_dims[d]) for d in dims_all] if dims_all else []
-        mean_v = float(np.mean(vals)) if vals else np.nan
-        min_v = float(np.min(vals)) if vals else np.nan
-        max_v = float(np.max(vals)) if vals else np.nan
-        st.metric("Media", f"{mean_v:.1f}" if np.isfinite(mean_v) else "—")
-        st.metric("Min", f"{min_v:.1f}" if np.isfinite(min_v) else "—")
-        st.metric("Max", f"{max_v:.1f}" if np.isfinite(max_v) else "—")
-
-    st.markdown("### Radar")
-    if dims_all:
-        radar_values = [float(row_dims[d]) for d in dims_all]
-        _render_radar_plot(dims_all, radar_values, None)
-    else:
-        st.info("Radar non disponibile: nessuna dimensione nello scope selezionato.")
-
+with st.sidebar:
     st.markdown("---")
-    st.markdown("## Livelli di Competenza")
-
-    if dims_all:
-        dps_df = pd.DataFrame({"Dimensione": dims_all, "Score": [float(row_dims[d]) for d in dims_all]})
-        dps_chart = (
-            alt.Chart(dps_df)
-            .mark_bar(**BAR_BORDER)
-            .encode(
-                y=alt.Y("Dimensione:N", sort=dims_all, title=None),
-                x=alt.X("Score:Q", title="Score 0–100", scale=alt.Scale(domain=[0, 100])),
-                color=alt.Color("Score:Q", scale=COLOR_SCALE, legend=None),
-                tooltip=[alt.Tooltip("Dimensione:N"), alt.Tooltip("Score:Q", format=".1f")],
-            )
-            .properties(height=min(720, 28 * max(8, len(dps_df))))
-        )
-        st.altair_chart(dps_chart, use_container_width=True)
-    else:
-        st.info("Nessuna dimensione da visualizzare per lo scope selezionato.")
-
-    st.markdown("---")
-    st.markdown("## Posizione rispetto ai percentili del reparto")
-
-    rows_pct = []
-    for dim in dims_all:
-        global_scores = df_dims[dim].dropna().astype(float).values
-        val = float(row_dims[dim])
-        pct = (float(np.sum(global_scores <= val)) / float(len(global_scores))) * 100.0 if len(global_scores) > 0 else np.nan
-        rows_pct.append({"Dimensione": dim, "Percentile globale": pct})
-
-    pct_df = pd.DataFrame(rows_pct)
-    if not pct_df.empty:
-        pct_chart = (
-            alt.Chart(pct_df)
-            .mark_bar(**BAR_BORDER)
-            .encode(
-                y=alt.Y("Dimensione:N", sort=dims_all, title=None),
-                x=alt.X("Percentile globale:Q", title="Percentile globale (%)", scale=alt.Scale(domain=[0, 100])),
-                color=alt.Color("Percentile globale:Q", scale=COLOR_SCALE, legend=None),
-                tooltip=[alt.Tooltip("Dimensione:N"), alt.Tooltip("Percentile globale:Q", format=".1f")],
-            )
-            .properties(height=min(720, 28 * max(8, len(pct_df))))
-        )
-        st.altair_chart(pct_chart, use_container_width=True)
-    else:
-        st.info("Impossibile calcolare i percentili globali.")
-
-    st.markdown("---")
-    st.markdown("## Competenze dettagliate del profilo")
-
-    _scope = scout_scope_df.copy()
-    _scope["Codice"] = _scope["Codice"].astype(str)
-
-    code_to_label = dict(zip(_scope["Codice"], _scope["Competenza"].astype(str)))
-    code_to_dim = dict(zip(_scope["Codice"], _scope["Dimensione"].astype(str)))
-    dim_pos = {d: i for i, d in enumerate(dims_all)}
-
-    def _code_sort_key(code: str):
-        d = code_to_dim.get(code, "")
-        dpos = dim_pos.get(d, 999)
-        m = re.search(r"(\D+)(\d+)$", str(code))
-        if m:
-            root = m.group(1)
-            n = int(m.group(2))
-        else:
-            root = re.sub(r"\d+$", "", str(code))
-            n = 9999
-        return (dpos, root, n, str(code))
-
-    sorted_codes = sorted(_scope["Codice"].astype(str).tolist(), key=_code_sort_key)
-
-    _target_idx = df_work.index[df_work["ID"].astype(str) == target_id_str].tolist()
-    if not _target_idx:
-        st.warning("Infermiere non trovato nel dataset.")
-        st.stop()
-    target_idx = _target_idx[0]
-
-    rows_comp = []
-    for code in sorted_codes:
-        level = normalize_level(df_work.loc[target_idx, code]) if code in df_work.columns else "NA"
-        rows_comp.append({"Dimensione": code_to_dim.get(code, ""), "Competenza": code_to_label.get(code, code), "Livello": level})
-
-    comp_df = pd.DataFrame(rows_comp)
-
-    st.markdown("### Visione d'insieme")
-    dim_rows = []
-    for dim, codes in codes_by_dim.items():
-        vals = df_num_scout.loc[target_idx, codes]
-        coverage = float((vals != 0).sum() / max(len(codes), 1) * 100)
-        score = float(row_dims[dim]) if dim in row_dims else 0.0
-        global_scores = df_dims[dim].dropna().astype(float).values if dim in df_dims.columns else np.array([])
-        pct = (float(np.sum(global_scores <= score)) / float(len(global_scores))) * 100.0 if len(global_scores) > 0 else np.nan
-
-        dim_rows.append(
-            {
-                "Dimensione": dim,
-                "Score": round(score, 1),
-                "Copertura_%": round(coverage, 1),
-                "Percentile_globale": round(float(pct), 1) if np.isfinite(pct) else np.nan,
-                "N_competenze": int(len(codes)),
-            }
-        )
-
-    dim_over = pd.DataFrame(dim_rows)
-    if dim_over.empty:
-        st.info("Nessuna competenza disponibile nel profilo per lo scope selezionato.")
-    else:
-        over_chart = (
-            alt.Chart(dim_over)
-            .mark_bar(**BAR_BORDER)
-            .encode(
-                y=alt.Y("Dimensione:N", sort=dims_all, title=None),
-                x=alt.X("Score:Q", title="Score 0–100", scale=alt.Scale(domain=[0, 100])),
-                color=alt.Color("Score:Q", scale=COLOR_SCALE, legend=None),
-                tooltip=[
-                    alt.Tooltip("Dimensione:N"),
-                    alt.Tooltip("Score:Q", format=".1f"),
-                    alt.Tooltip("Copertura_%:Q", format=".1f"),
-                    alt.Tooltip("Percentile_globale:Q", format=".1f"),
-                    alt.Tooltip("N_competenze:Q"),
-                ],
-            )
-            .properties(height=min(720, 28 * max(8, len(dim_over))))
-        )
-        st.altair_chart(over_chart, use_container_width=True)
-
-        show_dim_table = st.toggle("Mostra tabella riepilogo (dimensioni)", value=False, key="scout_show_dim_table")
-        if show_dim_table:
-            st.dataframe(
-                dim_over[["Dimensione", "Score", "Copertura_%", "Percentile_globale", "N_competenze"]],
-                hide_index=True,
-                use_container_width=True,
-            )
-
-    st.markdown("### Singole competenze (per dimensione)")
-    q = st.text_input("Cerca competenza", value="", key="scout_search_comp")
-    view_comp = comp_df.copy()
-    if q.strip():
-        qq = q.strip().lower()
-        view_comp = view_comp[view_comp["Competenza"].astype(str).str.lower().str.contains(qq)].copy()
-
-    if view_comp.empty:
-        st.info("Nessuna competenza trovata con il filtro.")
-    else:
-        _metrics = {}
-        if not dim_over.empty:
-            for _, r in dim_over.iterrows():
-                _metrics[str(r["Dimensione"])] = r
-
-        for dim in dims_all:
-            sub = view_comp[view_comp["Dimensione"] == dim][["Competenza", "Livello"]].copy()
-            if sub.empty:
-                continue
-
-            r = _metrics.get(dim, None)
-            title = f"{dim} — {float(r['Score']):.1f}/100 · Copertura {float(r['Copertura_%']):.0f}%" if r is not None and pd.notna(r.get("Score", np.nan)) else dim
-
-            with st.expander(title, expanded=False):
-                st.dataframe(sub, hide_index=True, use_container_width=True)
-
-        show_list = st.toggle("Mostra lista completa (tutte le competenze filtrate)", value=False, key="scout_show_full_list")
-        if show_list:
-            st.dataframe(view_comp[["Dimensione", "Competenza", "Livello"]], hide_index=True, use_container_width=True)
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-with tab_edit:
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.subheader("Modifica livelli per singolo infermiere")
-    st.caption("Seleziona un infermiere e modifica i livelli (NA, N, Pav, C, A, E). Premi **Salva** per applicare.")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    df_id = df_work[["ID", "Cognome", "Nome"]].astype(str)
-    df_id["label"] = df_id["ID"] + " — " + df_id["Cognome"] + " " + df_id["Nome"]
-    labels = df_id["label"].tolist()
-
-    if not labels:
-        st.error("Nel file non risultano infermieri (righe) da modificare.")
-        st.stop()
-
-    sel_label = st.selectbox("Seleziona infermiere", options=labels)
-    idx = labels.index(sel_label)
-
-    current_levels = [df_work.loc[idx, code] if code in df_work.columns else "NA" for code in editable_codes]
-
-    editor_df = scope_df.copy()
-    editor_df["Livello"] = [normalize_level(x) for x in current_levels]
-
-    f1, f2 = st.columns([1, 2])
-    with f1:
-        dim_options = list(editor_df["Dimensione"].unique())
-        dim_filter = st.multiselect("Filtra Dimensione", options=dim_options, default=dim_options, key="dim_filter")
-    with f2:
-        query = st.text_input("Cerca (codice o testo competenza)", value="", key="search_query")
-
-    view_df = editor_df[editor_df["Dimensione"].isin(dim_filter)].copy()
-    if query.strip():
-        q = query.strip().lower()
-        view_df = view_df[
-            view_df["Codice"].astype(str).str.lower().str.contains(q)
-            | view_df["Competenza"].astype(str).str.lower().str.contains(q)
-        ].copy()
-
-    edited = st.data_editor(
-        view_df[["Dimensione", "Codice", "Competenza", "Livello"]],
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Livello": st.column_config.SelectboxColumn("Livello", options=LEVELS, required=True, width="small")
-        },
-        key=f"editor_{df_work.loc[idx,'ID']}",
-    )
-
-    merged = editor_df[["Dimensione", "Codice", "Competenza", "Livello"]].copy()
-    merged["Codice"] = merged["Codice"].astype(str)
-    merged["Livello"] = merged["Livello"].apply(normalize_level)
-
-    edited_subset = edited[["Codice", "Livello"]].copy()
-    edited_subset["Codice"] = edited_subset["Codice"].astype(str)
-    edited_subset["Livello"] = edited_subset["Livello"].apply(normalize_level)
-
-    merged = merged.set_index("Codice")
-    merged.loc[edited_subset["Codice"], "Livello"] = edited_subset.set_index("Codice")["Livello"]
-    merged = merged.reset_index()
-
-    merged["Num"] = recode_series_to_num(merged["Livello"])
-
-    dim_scores = (
-        merged.groupby("Dimensione", sort=False)["Num"]
-        .apply(lambda s: round(score_percent(s), 1))
-        .reset_index()
-        .rename(columns={"Num": "Score_% (0–100)"})
-    )
-
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    c1, c2 = st.columns([1.2, 1])
-    with c1:
-        st.subheader("Score per Dimensione (live)")
-        st.dataframe(dim_scores, use_container_width=True, hide_index=True)
-    with c2:
-        tot = round(float(dim_scores["Score_% (0–100)"].mean()) if len(dim_scores) else 0.0, 1)
-        st.metric("Score totale (%)", tot)
-        st.caption("Score totale = media dei punteggi di dimensione nello scope selezionato.")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    if st.button("💾 Salva modifiche per questo infermiere", type="primary"):
-        for code, level in zip(merged["Codice"].astype(str), merged["Livello"].astype(str)):
-            if code in df_work.columns:
-                df_work.loc[idx, code] = normalize_level(level)
-        st.session_state["df_work"] = df_work
-        st.success("Modifiche salvate nel dataset di sessione.")
-
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.subheader("Download dataset uniforme (.xlsx)")
-    st.caption(
-        "Nel file scaricato: ordine colonne canonico (Direzione) + "
-        "colonne non visibili per questa Struttura impostate a `NA`."
-    )
-
-    export_df = df_work.copy()
-    editable_set = set(editable_codes)
-    for c in all_codes:
-        if c in export_df.columns:
-            export_df[c] = export_df[c].apply(normalize_level)
-            if c not in editable_set:
-                export_df[c] = "NA"
-
-    export_df = export_df[column_order]
-
-    xlsx_bytes = to_excel_bytes(export_df)
-    fname = f"competenze_{(structure or 'struttura').replace(' ','_')}.xlsx"
     st.download_button(
-        label="⬇️ Scarica Excel aggiornato",
+        "Scarica file aggiornato",
         data=xlsx_bytes,
-        file_name=fname,
+        file_name=output_name,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        type="primary",
+        use_container_width=True,
+    )
+    st.caption("Le modifiche ai livelli vengono applicate automaticamente nella sessione.")
+
+    with st.expander("Informazioni tecniche", expanded=False):
+        described = int(scope_df["Descrizione"].astype(str).str.strip().ne("").sum())
+        st.write(f"Descrizioni disponibili: **{described}/{len(scope_df)}**")
+        sources = guide_df.attrs.get("description_sources", [])
+        if sources:
+            st.write(f"File governance letti: **{len(sources)}**")
+        else:
+            st.caption("Nessun file descrittivo rilevato nelle cartelle 00_GOVERNANCE.")
+        if duplicate_codes:
+            st.caption("Codici duplicati nella guida: " + ", ".join(duplicate_codes))
+
+st.markdown(
+    "<div class='page-kicker'>MODIFICA COMPETENZE</div>"
+    f"<div class='person-heading'>{html.escape(str(selected_row['Cognome']))} "
+    f"{html.escape(str(selected_row['Nome']))}</div>"
+    f"<div class='person-subheading'>{html.escape(structure or 'Struttura non indicata')}</div>",
+    unsafe_allow_html=True,
+)
+
+if visible_scope.empty:
+    st.info("Nessuna competenza corrisponde ai filtri selezionati.")
+    st.stop()
+
+panel_order = visible_scope["Pannello"].astype(str).drop_duplicates().tolist()
+for panel in panel_order:
+    panel_visible = visible_scope[visible_scope["Pannello"].astype(str) == panel].copy()
+    panel_full = scope_df[scope_df["Pannello"].astype(str) == panel].copy()
+    title = "Competenze trasversali" if panel.casefold() == "trasversali" else panel
+    _render_panel(
+        panel_title=title,
+        panel_df=panel_visible,
+        full_panel_df=panel_full,
+        df_work=df_work,
+        selected_index=selected_index,
+        file_hash=file_hash,
+        row_token=row_token,
     )
 
-    st.markdown("</div>", unsafe_allow_html=True)
-
-st.caption("Config: `config/structure_dimensions.yml` (mappa Struttura→Dimensioni) · `config/column_order.json` (ordine colonne).")
+st.session_state["df_work"] = df_work

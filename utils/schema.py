@@ -1,36 +1,38 @@
 from __future__ import annotations
+
 import json
 from pathlib import Path
+
 import pandas as pd
+
 
 BASE_FIELDS = ["ID", "Nome", "Cognome", "Struttura"]
 
+
 def load_column_order(path: str | Path) -> list[str]:
     path = Path(path)
-    with open(path, "r", encoding="utf-8") as f:
-        cols = json.load(f)
-    # preserva il primo ordine ed evita duplicati accidentali
-    return list(dict.fromkeys(cols))
+    with open(path, "r", encoding="utf-8") as file:
+        columns = json.load(file)
+    return list(dict.fromkeys(columns))
+
 
 def ensure_schema(df: pd.DataFrame, column_order: list[str], fill_value: str = "NA") -> pd.DataFrame:
-    """Ensure all columns exist; add missing as fill_value; return df with columns ordered.
-    Extra columns are appended at the end (stable order).
+    """Aggiunge le colonne mancanti e applica l'ordine canonico.
+
+    Le colonne extra del file originale sono mantenute in coda durante la
+    lavorazione; il download finale può selezionare il solo ordine canonico.
     """
     out = df.copy()
-    for col in column_order:
-        if col not in out.columns:
-            out[col] = fill_value
-    extra = [c for c in out.columns if c not in column_order]
+    missing = [column for column in column_order if column not in out.columns]
+    if missing:
+        additions = pd.DataFrame(fill_value, index=out.index, columns=missing)
+        out = pd.concat([out, additions], axis=1)
+    extra = [column for column in out.columns if column not in column_order]
     return out[column_order + extra]
 
+
 def coerce_base_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Light normalization for base columns names."""
+    """Normalizzazione leggera delle intestazioni del dataset."""
     out = df.copy()
-    rename = {}
-    for c in out.columns:
-        c2 = str(c).strip()
-        if c2 != c:
-            rename[c] = c2
-    if rename:
-        out = out.rename(columns=rename)
-    return out
+    rename = {column: str(column).strip() for column in out.columns if str(column).strip() != column}
+    return out.rename(columns=rename) if rename else out
