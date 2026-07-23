@@ -1,0 +1,3 @@
+V8: ripristinata la funzione _render_dimension_grid rimossa accidentalmente nella V7.
+Verifiche eseguite: compilazione Python, parsing AST e controllo delle chiamate non definite.
+Il dettaglio della competenza resta esterno alle card, evitando deformazioni della griglia.
