@@ -112,8 +112,6 @@ def _reset_for_new_file() -> None:
         "filter_structure",
         "filter_professional",
         "view_widget",
-        "active_competence_row",
-        "active_competence_code",
     }
     for key in list(st.session_state):
         if key in exact_keys or any(key.startswith(prefix) for prefix in prefixes):
@@ -233,72 +231,40 @@ def _score_label(levels: list[str]) -> str:
     return str(int(round(score_percent(numeric))))
 
 
-def _set_active_competence(selected_row: int, code: str) -> None:
-    st.session_state["active_competence_row"] = selected_row
-    st.session_state["active_competence_code"] = code
+@st.dialog("Dettaglio competenza", width="large")
+def _show_competence_dialog(competence: pd.Series, widget_key: str) -> None:
+    current_level = normalize_level(st.session_state.get(widget_key, "NA"))
+    st.markdown(
+        f"""
+        <div class="dapss-dialog-heading">
+          <div class="dapss-dialog-code">{html.escape(str(competence['Codice']))}</div>
+          <div class="dapss-dialog-title">{html.escape(str(competence['Competenza']))}</div>
+          <div class="dapss-dialog-current">Livello attuale: <strong>{html.escape(_level_label(current_level))}</strong></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-
-def _render_competence_detail_panel(selected_row: int, file_key: str, catalogue_df: pd.DataFrame) -> None:
-    active_row = st.session_state.get("active_competence_row")
-    active_code = st.session_state.get("active_competence_code")
-    if active_row != selected_row or not active_code:
-        return
-
-    matches = catalogue_df[catalogue_df["Codice"].astype(str).eq(str(active_code))]
-    if matches.empty:
-        return
-    competence = matches.iloc[0]
-    widget_key = f"level::{file_key}::{selected_row}::{active_code}"
-    if widget_key not in st.session_state:
-        st.session_state[widget_key] = normalize_level("NA")
-
-    panel_left, panel_right = st.columns([5.2, 1.2])
-    with panel_left:
-        st.markdown(
-            f"""
-            <div class="dapss-download-card">
-              <div class="dapss-download-title">COMPETENZA SELEZIONATA</div>
-              <div class="dapss-download-name">{html.escape(str(competence['Codice']))} · {html.escape(str(competence['Competenza']))}</div>
-              <div class="dapss-download-copy">Modifica il livello Benner e consulta definizione e descrittori della singola competenza.</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with panel_right:
-        if st.button("Chiudi pannello", use_container_width=True, key=f"close_detail::{selected_row}::{active_code}"):
-            st.session_state.pop("active_competence_row", None)
-            st.session_state.pop("active_competence_code", None)
-            st.rerun()
-
-    tab_level, tab_comp, tab_desc = st.tabs(["Livello", "Competenza", "Descrittori"])
-    with tab_level:
-        st.radio(
-            "Livello di competenza",
-            options=LEVELS,
-            key=widget_key,
-            format_func=_level_label,
-            horizontal=True,
-            on_change=_mark_dirty,
-        )
-        chosen = normalize_level(st.session_state[widget_key])
-        if chosen == "NA":
+    level_tab, competence_tab, descriptors_tab = st.tabs(["Livello", "Competenza", "Descrittori"])
+    with level_tab:
+        if current_level == "NA":
             st.info("Nessun livello attribuito: la competenza è non applicabile o non ancora valutata.")
         else:
-            level_description = _safe_text(competence.get(f"Livello_{chosen}", ""))
-            st.markdown(f"**Descrittore {_level_label(chosen)}**")
+            level_description = _safe_text(competence.get(f"Livello_{current_level}", ""))
+            st.markdown(f"**Descrittore {_level_label(current_level)}**")
             if level_description:
                 st.write(level_description)
             else:
                 st.warning("Descrittore del livello non disponibile.")
 
-    with tab_comp:
+    with competence_tab:
         definition = _safe_text(competence.get("Definizione / Razionale", ""))
         if definition:
             st.write(definition)
         else:
             st.info("Definizione della competenza non disponibile.")
 
-    with tab_desc:
+    with descriptors_tab:
         for label, column in [
             ("Attitudini", "Attitudini"),
             ("Motivazioni", "Motivazioni"),
@@ -311,7 +277,6 @@ def _render_competence_detail_panel(selected_row: int, file_key: str, catalogue_
                 st.markdown(descriptor)
             else:
                 st.caption("Non disponibile")
-
 
 
 def _render_dimension_card(
@@ -330,8 +295,9 @@ def _render_dimension_card(
         draft_levels.append(normalize_level(st.session_state[widget_key]))
 
     score = _score_label(draft_levels)
+    safe_dimension = re.sub(r"[^a-zA-Z0-9_]+", "_", dimension).strip("_")[:48]
 
-    with st.container(border=True):
+    with st.container(border=True, key=f"family_card_{safe_dimension}"):
         st.markdown(
             f"""
             <div class="dapss-fm-family-header">
@@ -342,31 +308,45 @@ def _render_dimension_card(
             unsafe_allow_html=True,
         )
 
-        for _, row in subset.iterrows():
+        for row_number, (_, row) in enumerate(subset.iterrows()):
             code = str(row["Codice"])
             widget_key = f"level::{file_key}::{selected_row}::{code}"
             current = normalize_level(st.session_state[widget_key])
-            code_col, text_col, level_col = st.columns([0.75, 4.4, 0.95], gap="small")
-            with code_col:
-                st.markdown(
-                    f'<div class="dapss-fm-code">{html.escape(code)}</div>',
-                    unsafe_allow_html=True,
+            safe_code = re.sub(r"[^a-zA-Z0-9_]+", "_", code)
+
+            with st.container(key=f"competency_row_{safe_dimension}_{safe_code}"):
+                code_col, text_col, info_col, level_col = st.columns(
+                    [0.62, 5.25, 0.42, 0.82],
+                    gap="small",
                 )
-            with text_col:
-                st.markdown(
-                    f'<div class="dapss-fm-competency">'
-                    f'{html.escape(str(row["Competenza"]))}</div>',
-                    unsafe_allow_html=True,
-                )
-            with level_col:
-                if st.button(
-                    _level_label(current),
-                    key=f"open::{file_key}::{selected_row}::{code}",
-                    use_container_width=True,
-                    help="Apri livello, definizione e descrittori",
-                ):
-                    _set_active_competence(selected_row, code)
-                    st.rerun()
+                with code_col:
+                    st.markdown(
+                        f'<div class="dapss-fm-code">{html.escape(code)}</div>',
+                        unsafe_allow_html=True,
+                    )
+                with text_col:
+                    st.markdown(
+                        f'<div class="dapss-fm-competency">'
+                        f'{html.escape(str(row["Competenza"]))}</div>',
+                        unsafe_allow_html=True,
+                    )
+                with info_col:
+                    if st.button(
+                        "ⓘ",
+                        key=f"info::{file_key}::{selected_row}::{code}",
+                        help="Apri definizione e descrittori",
+                        use_container_width=True,
+                    ):
+                        _show_competence_dialog(row, widget_key)
+                with level_col:
+                    st.selectbox(
+                        "Livello di competenza",
+                        options=LEVELS,
+                        key=widget_key,
+                        format_func=_level_label,
+                        label_visibility="collapsed",
+                        on_change=_mark_dirty,
+                    )
 
 
 def _render_dimension_grid(
@@ -595,8 +575,6 @@ st.markdown(
     '<div class="dapss-insight">Ogni famiglia mostra il proprio punteggio /100. Ogni competenza è rappresentata dal mini-badge del livello Benner: N, PAV, C, A o E.</div>',
     unsafe_allow_html=True,
 )
-
-_render_competence_detail_panel(selected_row, file_key, catalogue)
 
 transversal_df = scope_df[scope_df["Dimensione"].isin(transversal_active)].copy()
 transversal_dims = transversal_df["Dimensione"].astype(str).drop_duplicates().tolist()

@@ -1,0 +1,8 @@
+FIX V11
+
+- Eliminato il pannello di modifica aperto sopra la griglia.
+- Il livello Benner si seleziona direttamente nella riga con un menu compatto.
+- Definizione e descrittori si aprono solo dal pulsante informazioni in una finestra dialog separata.
+- Famiglie disposte verticalmente a tutta larghezza.
+- Angoli esterni e intestazioni delle famiglie realmente stondati.
+- Salvataggio e download invariati.
