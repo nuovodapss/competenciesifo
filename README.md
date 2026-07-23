@@ -1,35 +1,32 @@
-# APPGrade — Modifica e Download
+# Gestione Competenze DAPSS — Coordinatori
 
-Applicazione Streamlit semplificata per i coordinatori.
+Applicazione Streamlit per modificare i file Excel delle competenze senza collegamento diretto al Drive.
 
 ## Flusso operativo
 
-1. Caricamento del file Excel di reparto scaricato dal Drive.
-2. Selezione del professionista.
-3. Modifica dei livelli direttamente nelle schede grafiche delle competenze.
-4. Download del file Excel aggiornato.
+1. Il coordinatore scarica dal Drive il file Excel della propria struttura.
+2. Nell'header dell'app apre **Snapshot** e carica il file.
+3. Seleziona struttura e professionista.
+4. Nella scheda **Modifica** clicca il livello della singola competenza.
+5. Nel pannello che si apre sceglie il livello e consulta:
+   - descrittore Benner del livello selezionato;
+   - definizione/razionale della competenza;
+   - Attitudini, Motivazioni, Skills e Conoscenze del foglio `Descrittori`.
+6. Preme **Salva modifiche**.
+7. Nella scheda **Download** scarica il file aggiornato.
+8. Ricarica manualmente il file sul Drive, sostituendo la versione precedente.
 
-La sezione di monitoraggio è stata rimossa. Le modifiche vengono conservate nella sessione dell'app e applicate automaticamente al file scaricato.
+L'app non scrive direttamente sul Drive.
 
-## Interfaccia
+## Fonte Governance
 
-Le competenze sono organizzate in schede per dimensione, con:
+La cartella `00_GOVERNANCE` è inclusa nell'app. I dati sono letti da:
 
-- codice;
-- titolo della competenza;
-- descrizione della singola competenza;
-- livello modificabile (`—`, `N`, `PAV`, `C`, `A`, `E`);
-- punteggio della dimensione su 100.
-
-## Descrizioni da `00_GOVERNANCE`
-
-L'app ricerca automaticamente file `.xlsx`, `.xlsm`, `.xls` e `.csv` in:
-
-- `00_GOVERNANCE/`
-- `data/00_GOVERNANCE/`
-- percorso indicato dalla variabile d'ambiente `GOVERNANCE_DIR`
-
-Il matching avviene per codice della competenza o, come fallback, per titolo della competenza. Il caricatore tollera intestazioni differenti, ad esempio `Descrizione competenza`, `Definizione`, `Descrittore` o `Comportamenti attesi`.
+- `02_Mappe/Mappa_Competenze_INF.xlsx`
+  - foglio `Mappa` per competenze e definizioni;
+  - foglio `Descrittori` per Attitudini, Motivazioni, Skills e Conoscenze;
+  - foglio `Livelli Benner` per i descrittori dei livelli;
+- `02_Mappe/Mappa_Strutture_Dimensioni_Competenza_INF.xlsx` per il perimetro delle dimensioni attive nella struttura.
 
 ## Avvio
 
@@ -37,11 +34,3 @@ Il matching avviene per codice della competenza o, come fallback, per titolo del
 pip install -r requirements.txt
 streamlit run app.py
 ```
-
-## File principali
-
-- `app.py`: interfaccia semplificata Modifica + Download
-- `data/guida_competenze.xlsx`: guida codici/dimensioni
-- `00_GOVERNANCE/`: fonti delle descrizioni
-- `config/structure_dimensions.yml`: mappa Struttura → Dimensioni
-- `config/column_order.json`: ordine canonico delle colonne nel download

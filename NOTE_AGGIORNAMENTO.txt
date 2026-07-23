@@ -1,20 +1,9 @@
-Aggiornamento applicativo — Modifica e Download
+AGGIORNAMENTO
 
-Modifiche principali
-- Rimossa completamente la sezione Monitoraggio.
-- Mantenuto il caricamento del file Excel di reparto.
-- Nuova schermata di modifica a schede, coerente con la grafica dell'Applicativo Competenze.
-- Competenze organizzate per pannello e dimensione in tre colonne responsive.
-- Livello modificabile direttamente su ogni riga.
-- Score dimensionale live su scala 0/25/50/75/100 (NA escluso dal calcolo).
-- Download immediato del file aggiornato con ordine colonne canonico.
-- Ricerca per codice, titolo o descrizione.
-
-Descrizioni delle competenze
-- Aggiunto caricamento automatico dei file Excel/CSV presenti in 00_GOVERNANCE.
-- Matching prioritario per codice e fallback per titolo della competenza.
-- Supporto a più file, sottocartelle e più fogli Excel.
-- Possibilità di indicare una cartella esterna tramite GOVERNANCE_DIR.
-
-Nota
-I file sorgente di 00_GOVERNANCE non erano inclusi nel pacchetto ricevuto. Il codice è predisposto per caricarli automaticamente quando vengono aggiunti alla cartella.
+- Header e selettori allineati graficamente all'applicazione principale.
+- Upload spostato nel controllo Snapshot dell'header.
+- Navigazione semplificata alle sole schede Modifica e Download.
+- Clic sul livello apre un pannello con selezione, descrittore Benner, definizione e descrittori del file Mappe.
+- Governance corretta inclusa direttamente nell'app.
+- Aggiunto salvataggio esplicito: il download è disabilitato finché le modifiche non sono state salvate.
+- Il file viene sempre ricaricato manualmente sul Drive dal coordinatore.

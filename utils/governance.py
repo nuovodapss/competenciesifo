@@ -1,164 +1,120 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 import re
-import unicodedata
 
 import pandas as pd
 
 
-_CODE_ALIASES = {
-    "codice",
-    "codice competenza",
-    "codice della competenza",
-    "id competenza",
-    "id_competenza",
-    "codice_competenza",
-}
-_DESCRIPTION_ALIASES = {
-    "descrizione",
-    "descrizione competenza",
-    "descrizione della competenza",
-    "definizione",
-    "descrittore",
-    "descrittori",
-    "comportamento atteso",
-    "comportamenti attesi",
-    "elementi descrittivi",
-    "note descrittive",
-}
-_COMPETENCE_ALIASES = {
-    "competenza",
-    "nome competenza",
-    "titolo competenza",
-    "denominazione competenza",
+LEVEL_COLUMN_MAP = {
+    "N": "Novizio",
+    "Pav": "Principiante avanzato",
+    "C": "Competente",
+    "A": "Abile",
+    "E": "Esperto",
 }
 
 
 def _norm(value: object) -> str:
-    text = "" if value is None else str(value)
-    text = unicodedata.normalize("NFKD", text)
-    text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    text = text.strip().lower().replace("_", " ").replace("-", " ")
-    return re.sub(r"\s+", " ", text)
-
-
-def _find_column(columns: list[object], aliases: set[str]) -> str | None:
-    normalized = {_norm(col): str(col) for col in columns}
-    for alias in aliases:
-        if alias in normalized:
-            return normalized[alias]
-
-    # Tolleranza per intestazioni più lunghe, ad esempio
-    # "Descrizione sintetica della competenza".
-    for norm_col, original in normalized.items():
-        if any(alias in norm_col for alias in aliases):
-            return original
-    return None
+    return re.sub(r"[^a-z0-9]", "", str(value).strip().lower())
 
 
 def _clean_text(value: object) -> str:
     if value is None or pd.isna(value):
         return ""
-    text = re.sub(r"\s+", " ", str(value)).strip()
-    if text.lower() in {"nan", "none", "-", "—"}:
-        return ""
-    return text
+    return str(value).strip()
 
 
-def _read_tables(path: Path) -> list[pd.DataFrame]:
-    suffix = path.suffix.lower()
-    if suffix in {".xlsx", ".xlsm", ".xls"}:
-        book = pd.ExcelFile(path)
-        return [pd.read_excel(path, sheet_name=sheet) for sheet in book.sheet_names]
-    if suffix == ".csv":
-        # sep=None usa il rilevamento automatico e gestisce sia ; sia ,.
-        return [pd.read_csv(path, sep=None, engine="python")]
-    return []
+@dataclass(frozen=True)
+class GovernanceData:
+    catalogue: pd.DataFrame
+    structure_dimensions: dict[str, list[str]]
+
+    @property
+    def codes(self) -> list[str]:
+        return self.catalogue["Codice"].astype(str).tolist()
+
+    def dimensions_for_structure(self, structure: str) -> list[str]:
+        lookup = {_norm(k): v for k, v in self.structure_dimensions.items()}
+        return list(lookup.get(_norm(structure), []))
 
 
-def load_governance_descriptions(
-    directories: list[str | Path],
-    guide_df: pd.DataFrame,
-) -> tuple[dict[str, str], list[str]]:
-    """Carica descrizioni delle competenze dai file di 00_GOVERNANCE.
+def load_governance(root: str | Path) -> GovernanceData:
+    root = Path(root)
+    competence_map = root / "02_Mappe" / "Mappa_Competenze_INF.xlsx"
+    structure_map = root / "02_Mappe" / "Mappa_Strutture_Dimensioni_Competenza_INF.xlsx"
 
-    Il matching avviene prima per ``Codice`` e, come fallback, per testo della
-    ``Competenza``. Sono supportati Excel e CSV, anche con più fogli e con
-    intestazioni leggermente differenti.
+    if not competence_map.exists():
+        raise FileNotFoundError(f"Mappa competenze non trovata: {competence_map}")
+    if not structure_map.exists():
+        raise FileNotFoundError(f"Mappa strutture non trovata: {structure_map}")
 
-    Returns
-    -------
-    descriptions:
-        Dizionario ``codice -> descrizione``.
-    sources:
-        Elenco dei file dai quali è stata ricavata almeno una descrizione.
-    """
+    map_df = pd.read_excel(competence_map, sheet_name="Mappa", dtype=object)
+    descriptors_df = pd.read_excel(competence_map, sheet_name="Descrittori", dtype=object)
+    levels_df = pd.read_excel(competence_map, sheet_name="Livelli Benner", dtype=object)
 
-    title_to_codes: dict[str, list[str]] = {}
-    for _, row in guide_df.iterrows():
-        code = _clean_text(row.get("Codice"))
-        title = _norm(row.get("Competenza"))
-        if code and title:
-            title_to_codes.setdefault(title, []).append(code)
+    map_df = map_df.rename(columns={c: str(c).strip() for c in map_df.columns})
+    required_map = [
+        "Pannello",
+        "Dimensione",
+        "Codice",
+        "Competenza",
+        "Definizione / Razionale",
+    ]
+    missing = [c for c in required_map if c not in map_df.columns]
+    if missing:
+        raise ValueError(f"Mappa competenze: colonne mancanti {missing}")
 
-    descriptions: dict[str, str] = {}
-    used_sources: list[str] = []
-    seen_files: set[Path] = set()
+    # La scheda Mappa contiene il perimetro ufficiale attivo.
+    if "Selezionata" in map_df.columns:
+        selected = map_df["Selezionata"].astype(str).str.strip().str.upper()
+        map_df = map_df[selected.eq("SI")].copy()
 
-    for directory in directories:
-        base = Path(directory).expanduser()
-        if not base.exists() or not base.is_dir():
+    keep_map = required_map
+    catalogue = map_df[keep_map].copy()
+    for column in keep_map:
+        catalogue[column] = catalogue[column].map(_clean_text)
+
+    descriptor_columns = ["Codice", "Attitudini", "Motivazioni", "Skills", "Conoscenze"]
+    missing_desc = [c for c in descriptor_columns if c not in descriptors_df.columns]
+    if missing_desc:
+        raise ValueError(f"Foglio Descrittori: colonne mancanti {missing_desc}")
+    descriptors_df = descriptors_df[descriptor_columns].copy()
+    for column in descriptor_columns:
+        descriptors_df[column] = descriptors_df[column].map(_clean_text)
+    descriptors_df = descriptors_df.drop_duplicates(subset=["Codice"], keep="first")
+
+    level_columns = ["Codice", *LEVEL_COLUMN_MAP.values()]
+    missing_levels = [c for c in level_columns if c not in levels_df.columns]
+    if missing_levels:
+        raise ValueError(f"Foglio Livelli Benner: colonne mancanti {missing_levels}")
+    levels_df = levels_df[level_columns].copy()
+    for column in level_columns:
+        levels_df[column] = levels_df[column].map(_clean_text)
+    levels_df = levels_df.drop_duplicates(subset=["Codice"], keep="first")
+    levels_df = levels_df.rename(
+        columns={source: f"Livello_{level}" for level, source in LEVEL_COLUMN_MAP.items()}
+    )
+
+    catalogue = catalogue.merge(descriptors_df, on="Codice", how="left")
+    catalogue = catalogue.merge(levels_df, on="Codice", how="left")
+    catalogue = catalogue.drop_duplicates(subset=["Codice"], keep="first").reset_index(drop=True)
+    catalogue["_ordine"] = range(len(catalogue))
+
+    structure_df = pd.read_excel(structure_map, sheet_name="Mappa", dtype=object)
+    expected_structure = ["Struttura", "Dimensioni di Competenza Attivate"]
+    missing_structure = [c for c in expected_structure if c not in structure_df.columns]
+    if missing_structure:
+        raise ValueError(f"Mappa strutture: colonne mancanti {missing_structure}")
+
+    structure_dimensions: dict[str, list[str]] = {}
+    for _, row in structure_df.iterrows():
+        structure = _clean_text(row["Struttura"])
+        raw_dimensions = _clean_text(row["Dimensioni di Competenza Attivate"])
+        if not structure:
             continue
+        dimensions = [part.strip() for part in raw_dimensions.split(";") if part.strip()]
+        structure_dimensions[structure] = list(dict.fromkeys(dimensions))
 
-        for path in sorted(base.rglob("*")):
-            if not path.is_file() or path.suffix.lower() not in {".xlsx", ".xlsm", ".xls", ".csv"}:
-                continue
-            if path.name.startswith("~$") or path in seen_files:
-                continue
-            seen_files.add(path)
-
-            source_used = False
-            try:
-                tables = _read_tables(path)
-            except Exception:
-                # Un file non leggibile non deve bloccare l'applicazione.
-                continue
-
-            for table in tables:
-                if table.empty:
-                    continue
-                table = table.rename(columns={c: str(c).strip() for c in table.columns})
-                columns = list(table.columns)
-                code_col = _find_column(columns, _CODE_ALIASES)
-                description_col = _find_column(columns, _DESCRIPTION_ALIASES)
-                competence_col = _find_column(columns, _COMPETENCE_ALIASES)
-
-                if description_col is None:
-                    continue
-
-                for _, row in table.iterrows():
-                    description = _clean_text(row.get(description_col))
-                    if not description:
-                        continue
-
-                    target_codes: list[str] = []
-                    if code_col is not None:
-                        code = _clean_text(row.get(code_col))
-                        if code:
-                            target_codes = [code]
-                    elif competence_col is not None:
-                        title = _norm(row.get(competence_col))
-                        target_codes = title_to_codes.get(title, [])
-
-                    for code in target_codes:
-                        # Il primo testo valido è mantenuto per rendere il risultato
-                        # deterministico quando più file contengono lo stesso codice.
-                        if code not in descriptions:
-                            descriptions[code] = description
-                            source_used = True
-
-            if source_used:
-                used_sources.append(str(path))
-
-    return descriptions, used_sources
+    return GovernanceData(catalogue=catalogue, structure_dimensions=structure_dimensions)
