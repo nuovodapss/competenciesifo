@@ -344,3 +344,24 @@ div[data-testid="stSelectbox"] label, div[data-testid="stMultiSelect"] label { c
   padding: 0.35rem 0.45rem 0.55rem !important;
 }
 [data-testid="stPopoverBody"] > div { overflow: visible !important; }
+
+
+/* FIX livello competenza: pulsanti compatti, nessuna apertura inline nella card */
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"]:last-child .stButton > button {
+  min-height: 31px !important;
+  height: 31px !important;
+  padding: 0 10px !important;
+  border-radius: 8px !important;
+  border: 1px solid #d8e4dd !important;
+  background: #f3f4f4 !important;
+  color: #173126 !important;
+  font-family: "IBM Plex Mono", monospace !important;
+  font-size: .7rem !important;
+  font-weight: 600 !important;
+  box-shadow: none !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"]:last-child .stButton > button:hover {
+  border-color: #c5e5d3 !important;
+  background: #e8f6ee !important;
+  color: #24724a !important;
+}
