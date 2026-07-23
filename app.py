@@ -314,6 +314,61 @@ def _render_competence_detail_panel(selected_row: int, file_key: str, catalogue_
 
 
 
+def _render_dimension_card(
+    dimension: str,
+    subset: pd.DataFrame,
+    selected_row: int,
+    file_key: str,
+    df_work: pd.DataFrame,
+) -> None:
+    draft_levels: list[str] = []
+    for code in subset["Codice"].astype(str):
+        widget_key = f"level::{file_key}::{selected_row}::{code}"
+        initial = normalize_level(df_work.at[selected_row, code])
+        if widget_key not in st.session_state:
+            st.session_state[widget_key] = initial
+        draft_levels.append(normalize_level(st.session_state[widget_key]))
+
+    score = _score_label(draft_levels)
+
+    with st.container(border=True):
+        st.markdown(
+            f"""
+            <div class="dapss-fm-family-header">
+              <h4>{html.escape(str(dimension))}</h4>
+              <span>{html.escape(score)}<small>/100</small></span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        for _, row in subset.iterrows():
+            code = str(row["Codice"])
+            widget_key = f"level::{file_key}::{selected_row}::{code}"
+            current = normalize_level(st.session_state[widget_key])
+            code_col, text_col, level_col = st.columns([0.75, 4.4, 0.95], gap="small")
+            with code_col:
+                st.markdown(
+                    f'<div class="dapss-fm-code">{html.escape(code)}</div>',
+                    unsafe_allow_html=True,
+                )
+            with text_col:
+                st.markdown(
+                    f'<div class="dapss-fm-competency">'
+                    f'{html.escape(str(row["Competenza"]))}</div>',
+                    unsafe_allow_html=True,
+                )
+            with level_col:
+                if st.button(
+                    _level_label(current),
+                    key=f"open::{file_key}::{selected_row}::{code}",
+                    use_container_width=True,
+                    help="Apri livello, definizione e descrittori",
+                ):
+                    _set_active_competence(selected_row, code)
+                    st.rerun()
+
+
 def _render_dimension_grid(
     title: str,
     dimensions: list[str],
@@ -322,7 +377,7 @@ def _render_dimension_grid(
     file_key: str,
     df_work: pd.DataFrame,
 ) -> None:
-    """Renderizza le famiglie senza aprire controlli espandibili dentro le card."""
+    """Renderizza le famiglie in righe da 3, mantenendo l'ordine visivo sinistra→destra."""
     if not dimensions:
         return
 
@@ -330,64 +385,17 @@ def _render_dimension_grid(
         f'<div class="dapss-fm-section-title">{html.escape(title)}</div>',
         unsafe_allow_html=True,
     )
-    columns = st.columns(3)
 
-    for idx, dimension in enumerate(dimensions):
-        subset = source_df[
-            source_df["Dimensione"].astype(str).eq(str(dimension))
-        ].copy()
-        if subset.empty:
-            continue
-
-        draft_levels: list[str] = []
-        for code in subset["Codice"].astype(str):
-            widget_key = f"level::{file_key}::{selected_row}::{code}"
-            initial = normalize_level(df_work.at[selected_row, code])
-            if widget_key not in st.session_state:
-                st.session_state[widget_key] = initial
-            draft_levels.append(normalize_level(st.session_state[widget_key]))
-
-        score = _score_label(draft_levels)
-
-        with columns[idx % 3]:
-            with st.container(border=True):
-                st.markdown(
-                    f"""
-                    <div class="dapss-fm-family-header">
-                      <h4>{html.escape(str(dimension))}</h4>
-                      <span>{html.escape(score)}<small>/100</small></span>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-                for _, row in subset.iterrows():
-                    code = str(row["Codice"])
-                    widget_key = f"level::{file_key}::{selected_row}::{code}"
-                    current = normalize_level(st.session_state[widget_key])
-                    code_col, text_col, level_col = st.columns(
-                        [0.75, 4.4, 0.95], gap="small"
-                    )
-                    with code_col:
-                        st.markdown(
-                            f'<div class="dapss-fm-code">{html.escape(code)}</div>',
-                            unsafe_allow_html=True,
-                        )
-                    with text_col:
-                        st.markdown(
-                            f'<div class="dapss-fm-competency">'
-                            f'{html.escape(str(row["Competenza"]))}</div>',
-                            unsafe_allow_html=True,
-                        )
-                    with level_col:
-                        if st.button(
-                            _level_label(current),
-                            key=f"open::{file_key}::{selected_row}::{code}",
-                            use_container_width=True,
-                            help="Apri livello, definizione e descrittori",
-                        ):
-                            _set_active_competence(selected_row, code)
-                            st.rerun()
+    ordered_dimensions = [str(d) for d in dimensions]
+    for row_start in range(0, len(ordered_dimensions), 3):
+        row_dims = ordered_dimensions[row_start: row_start + 3]
+        row_columns = st.columns(3)
+        for col_idx, dimension in enumerate(row_dims):
+            subset = source_df[source_df["Dimensione"].astype(str).eq(dimension)].copy()
+            if subset.empty:
+                continue
+            with row_columns[col_idx]:
+                _render_dimension_card(dimension, subset, selected_row, file_key, df_work)
 
 
 
